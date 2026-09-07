@@ -1,0 +1,44 @@
+Release feedback
+http://127.0.0.1:3000/forms/form-1
+
+Grove form lab
+Overview
+Create a form
+Interaction lab
+Reference page
+Release feedback
+
+Local end-to-end browser review
+
+Form created. Ready for a response.
+
+Your name
+Email address
+Topic
+Choose a topic
+Browsing
+Automation
+Design
+Priority
+ Normal
+ High
+Your feedback
+Add project context
+I agree to submit this local test response
+Submit response
+Local test fixture. Submissions remain on this machine and are discarded when the server closes.
+
+Controls:
+@e201 a "Overview"
+@e202 a "Create a form"
+@e203 a "Interaction lab"
+@e204 a "Reference page"
+@e205 input "Your name"
+@e206 input "Email address"
+@e207 select "Topic"
+@e208 input "Normal"
+@e209 input "High"
+@e210 textarea "Your feedback"
+@e211 button "Add project context"
+@e212 input "I agree to submit this local test response"
+@e213 button "Submit response"

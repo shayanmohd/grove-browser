@@ -1,0 +1,26 @@
+Create a form
+http://127.0.0.1:3000/forms/new
+
+Grove form lab
+Overview
+Create a form
+Interaction lab
+Reference page
+Create a form
+Form title
+Description
+Template
+Product feedback
+Research request
+Create form
+Local test fixture. Submissions remain on this machine and are discarded when the server closes.
+
+Controls:
+@e1 a "Overview"
+@e2 a "Create a form"
+@e3 a "Interaction lab"
+@e4 a "Reference page"
+@e5 input "Form title"
+@e6 textarea "Description"
+@e7 select "Template"
+@e8 button "Create form"

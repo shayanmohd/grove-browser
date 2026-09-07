@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grove Browser"
+  short_description: "Browse in Grove with compact snapshots and batches"
+  default_prompt: "Use $grove-browser to complete this browser task in an isolated Grove space."

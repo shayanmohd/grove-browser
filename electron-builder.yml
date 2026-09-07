@@ -1,0 +1,73 @@
+appId: dev.grove.browser
+productName: Grove
+copyright: Copyright (c) 2026 Grove contributors
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - LICENSE
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+publish: null
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  darkModeSupport: true
+  identity: null
+  hardenedRuntime: false
+  notarize: false
+  target:
+    - dmg
+    - zip
+  artifactName: Grove-${version}-mac-${arch}.${ext}
+dmg:
+  title: Grove
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+  artifactName: Grove-${version}-windows-${arch}.${ext}
+nsis:
+  artifactName: Grove-${version}-windows-${arch}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Grove
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: Grove-${version}-windows-${arch}-portable.${ext}
+linux:
+  executableName: grove
+  icon: build/icon.png
+  category: Network
+  synopsis: A focused browser with spaces for people and agents
+  description: Browse with vertical tabs, isolated spaces, split view, and an optional local automation API.
+  maintainer: Grove contributors
+  vendor: Grove contributors
+  target:
+    - AppImage
+    - deb
+  artifactName: Grove-${version}-linux-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Grove
+      Comment: A little more room to think
+      Categories: Network;WebBrowser;
+      Keywords: browser;web;spaces;automation;
+      StartupWMClass: Grove
+      Terminal: "false"

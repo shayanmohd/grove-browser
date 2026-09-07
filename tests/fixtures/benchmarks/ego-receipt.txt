@@ -1,0 +1,46 @@
+root
+  container
+    text "Grove form lab"
+    container "Lab navigation"
+      anchor [ref=260, loc=href:/, url=http://127.0.0.1:3000/]
+        text "Overview"
+      anchor [ref=262, loc=unstable, url=http://127.0.0.1:3000/forms/new]
+        text "Create a form"
+      anchor [ref=264, loc=href:/lab, url=http://127.0.0.1:3000/lab]
+        text "Interaction lab"
+      anchor [ref=266, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
+        text "Reference page"
+  container
+    heading
+      text "Submission received"
+    status
+      text "Your local response was saved exactly once."
+    unordered_list
+      list_item
+        text "Receipt"
+      list_item
+        text "receipt-1"
+      list_item
+        text "Name"
+      list_item
+        text "Browser Reviewer"
+      list_item
+        text "Topic"
+      list_item
+        text "automation"
+      list_item
+        text "Priority"
+      list_item
+        text "high"
+      list_item
+        text "Feedback"
+      list_item
+        text "The local form workflow completed through the browser skill."
+      list_item
+        text "Project context"
+      list_item
+        text "Cross-platform portfolio review"
+    anchor [ref=298, loc=unstable, url=http://127.0.0.1:3000/forms/new]
+      text "Create another form"
+  container
+    text "Local test fixture. Submissions remain on this machine and are discarded when the server closes."

@@ -1,0 +1,45 @@
+root
+  container
+    text "Grove form lab"
+    container "Lab navigation"
+      anchor [ref=208, loc=href:/, url=http://127.0.0.1:3000/]
+        text "Overview"
+      anchor [ref=210, loc=href:/forms/new, url=http://127.0.0.1:3000/forms/new]
+        text "Create a form"
+      anchor [ref=212, loc=href:/lab, url=http://127.0.0.1:3000/lab]
+        text "Interaction lab"
+      anchor [ref=214, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
+        text "Reference page"
+  container
+    heading
+      text "Release feedback"
+    paragraph
+      text "Local end-to-end browser review"
+    status
+      text "Form created. Ready for a response."
+    form
+      text "Your name"
+      textbox [ref=194, loc=css:input[name="name"]]
+      text "Email address"
+      textbox [ref=195, loc=css:input[name="email"]]
+      text "Topic"
+      combobox [ref=196, loc=css:select[name="topic"]]
+        text "Choose a topic"
+      group [ref=233, loc=unstable]
+        text "Priority"
+        container
+          radio [ref=198, loc=unstable]
+          text "Normal"
+        container
+          radio [ref=199, loc=unstable]
+          text "High"
+      text "Your feedback"
+      textbox [ref=197, loc=css:textarea[name="notes"]]
+      button [ref=243, loc=unstable]
+        text "Add project context"
+      checkbox [ref=200, loc=css:input[name="consent"]]
+      text "I agree to submit this local test response"
+      button [ref=247, loc=unstable]
+        text "Submit response"
+  container
+    text "Local test fixture. Submissions remain on this machine and are discarded when the server closes."

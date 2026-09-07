@@ -1,0 +1,90 @@
+{
+  "tokenizer": "o200k_base",
+  "tokenizerPackage": "js-tiktoken@1.0.21",
+  "source": "Captured local Chromium observations, normalized loopback port 3000",
+  "fixtures": [
+    {
+      "name": "form",
+      "ego": {
+        "characters": 1002,
+        "tokens": 290,
+        "sha256": "284e0676125d08e2a6d18426425dffd79793c8059980cc1d28d4d3205b3bdac7"
+      },
+      "grove": {
+        "characters": 499,
+        "tokens": 138,
+        "sha256": "3a33549f8911040414b59ccd159d9153f7bf8a5ece57f090a501704a55d0ba22"
+      },
+      "reductionPercent": 52.4
+    },
+    {
+      "name": "created-form",
+      "ego": {
+        "characters": 1600,
+        "tokens": 447,
+        "sha256": "bdf73176cc40c7b28242d7b1fc574e1469d9e935a2acef230aecf22a4bfddb6b"
+      },
+      "grove": {
+        "characters": 867,
+        "tokens": 226,
+        "sha256": "d7963c91d4e4533cbde1ea4c6871b53a55eed5bd17a3cfa719e9a5147ad6bf65"
+      },
+      "reductionPercent": 49.4
+    },
+    {
+      "name": "receipt",
+      "ego": {
+        "characters": 1405,
+        "tokens": 368,
+        "sha256": "4b66cbac92f0fb7f1bbc581e36d702e4a29356f2dcf305bda9b3178148fa022e"
+      },
+      "grove": {
+        "characters": 638,
+        "tokens": 155,
+        "sha256": "bef71b3b5622c2381e6dcf08fa193ade92c2b5eb33a6fbb724ddb8f18b3f54c4"
+      },
+      "reductionPercent": 57.9
+    },
+    {
+      "name": "reference",
+      "ego": {
+        "characters": 8066,
+        "tokens": 1986,
+        "sha256": "0cc4daec1b9cbde15a3048ab31c0f7298a8cfab95a7212524180fcecdc6af835"
+      },
+      "grove": {
+        "characters": 4971,
+        "tokens": 1055,
+        "sha256": "e31d0e332a11c3ba0c7f8cd8ac25de7c08a373529c2ef6438438c59115734be6"
+      },
+      "reductionPercent": 46.9
+    }
+  ],
+  "totals": {
+    "egoTokens": 3091,
+    "groveTokens": 1574,
+    "reductionPercent": 49.1
+  },
+  "groveSkill": {
+    "SKILL.md": {
+      "characters": 3500,
+      "tokens": 717,
+      "sha256": "8a498b22295e2276bbe7a5579ecf80626d08a9fe90a3be23bac83f15ef525e35"
+    },
+    "references/actions.md": {
+      "characters": 4879,
+      "tokens": 1147,
+      "sha256": "8f7362a7500e79fee09889e8e589eb97f8ed99b4ce1dea8c8c3529e3bce0a1f5"
+    },
+    "references/connection.md": {
+      "characters": 2225,
+      "tokens": 438,
+      "sha256": "e647452dbfa567193ad753984fa7e58c700f4639bb9e07c34215b3c00021bb05"
+    }
+  },
+  "egoSkill": {
+    "characters": 19655,
+    "tokens": 4659,
+    "sha256": "44c119634df847861486c3b104cda3c2faa9dd4c71dbb3a854429098be962293"
+  }
+}

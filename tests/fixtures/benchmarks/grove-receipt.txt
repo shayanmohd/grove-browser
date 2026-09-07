@@ -1,0 +1,33 @@
+Submission received
+http://127.0.0.1:3000/receipts/receipt-1
+
+Grove form lab
+Overview
+Create a form
+Interaction lab
+Reference page
+Submission received
+
+Your local response was saved exactly once.
+
+Receipt
+receipt-1
+Name
+Browser Reviewer
+Topic
+automation
+Priority
+high
+Feedback
+The local form workflow completed through the browser skill.
+Project context
+Cross-platform portfolio review
+Create another form
+Local test fixture. Submissions remain on this machine and are discarded when the server closes.
+
+Controls:
+@e501 a "Overview"
+@e502 a "Create a form"
+@e503 a "Interaction lab"
+@e504 a "Reference page"
+@e505 a "Create another form"

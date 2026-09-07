@@ -1,0 +1,64 @@
+import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
+
+const escape = (value = '') => String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+const styles = `body{font:16px system-ui;margin:0;background:#f3f6f1;color:#24372c}header,main,footer{max-width:820px;margin:auto;padding:24px}header{border-bottom:1px solid #cfdbce}nav{display:flex;gap:20px}a{color:#285f39}h1{font-size:32px}label,legend{display:block;font-weight:600;margin:18px 0 8px}input:not([type=checkbox]):not([type=radio]),select,textarea{display:block;box-sizing:border-box;width:100%;max-width:640px;padding:10px;border:1px solid #9bac9b;border-radius:6px;font:inherit}button{padding:11px 18px;border:1px solid #426346;border-radius:6px;background:#36593e;color:white;font:inherit;margin:16px 8px 0 0}fieldset{border:1px solid #cfdbce;border-radius:8px;margin:20px 0;padding:12px 20px}fieldset label{font-weight:400}small{color:#58705c}pre{white-space:pre-wrap}#error{color:#912d26}.row{display:flex;align-items:center;gap:9px}.row label{margin:12px 0}footer{font-size:12px;color:#58705c}`;
+const document = (title, body, script = '') => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)}</title><style>${styles}</style></head><body><header><strong>Grove form lab</strong><nav aria-label="Lab navigation"><a href="/">Overview</a><a href="/forms/new">Create a form</a><a href="/lab">Interaction lab</a><a href="/benchmark">Reference page</a></nav></header><main>${body}</main><footer>Local test fixture. Submissions remain on this machine and are discarded when the server closes.</footer>${script ? `<script>${script}</script>` : ''}</body></html>`;
+
+export async function startFormSite() {
+  const forms = new Map();
+  const submissions = [];
+  const events = [];
+  const csrf = randomUUID();
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://127.0.0.1');
+    const send = (title, body, script = '', status = 200) => {
+      response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      response.end(document(title, body, script));
+    };
+    const redirect = destination => { response.writeHead(303, { Location: destination, 'Cache-Control': 'no-store' }); response.end(); };
+    const readForm = async () => {
+      const chunks = []; let size = 0;
+      for await (const chunk of request) { size += chunk.length; if (size > 32768) throw new Error('Form too large'); chunks.push(chunk); }
+      return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+    };
+    try {
+      if (request.method === 'GET' && url.pathname === '/') return send('Grove form lab', '<h1>Test a complete form workflow</h1><p>Create a form, fill it out, and verify a server receipt. This local site records real POST requests.</p><a id="create-form" href="/forms/new">Create your first form</a>');
+      if (request.method === 'GET' && url.pathname === '/forms/new') return send('Create a form', `<h1>Create a form</h1><form action="/forms" method="post" id="builder"><input type="hidden" name="csrf" value="${csrf}"><label for="form-title">Form title</label><input id="form-title" name="title" required maxlength="100"><label for="form-description">Description</label><textarea id="form-description" name="description" maxlength="500"></textarea><label for="form-template">Template</label><select id="form-template" name="template"><option value="feedback">Product feedback</option><option value="research">Research request</option></select><button id="create-submit" type="submit">Create form</button></form>`);
+      if (request.method === 'POST' && url.pathname === '/forms') {
+        const body = await readForm();
+        if (body.get('csrf') !== csrf || !body.get('title')?.trim()) return send('Form creation failed', '<h1 id="error">A valid title and token are required.</h1>', '', 422);
+        const form = { id: `form-${forms.size + 1}`, title: body.get('title'), description: body.get('description'), template: body.get('template') };
+        forms.set(form.id, form); events.push({ type: 'form-created', id: form.id });
+        return redirect(`/forms/${form.id}`);
+      }
+      const formMatch = url.pathname.match(/^\/forms\/(form-\d+)$/);
+      if (request.method === 'GET' && formMatch && forms.has(formMatch[1])) {
+        const form = forms.get(formMatch[1]);
+        return send(form.title, `<h1>${escape(form.title)}</h1><p>${escape(form.description)}</p><p id="form-created" role="status">Form created. Ready for a response.</p><form id="response-form" method="post" action="/forms/${form.id}/submit"><input type="hidden" name="csrf" value="${csrf}"><label for="respondent">Your name</label><input id="respondent" name="name" required><label for="email">Email address</label><input id="email" name="email" type="email" required><label for="topic">Topic</label><select id="topic" name="topic" required><option value="">Choose a topic</option><option value="browsing">Browsing</option><option value="automation">Automation</option><option value="design">Design</option></select><fieldset><legend>Priority</legend><label><input id="priority-normal" type="radio" name="priority" value="normal" checked> Normal</label><label><input id="priority-high" type="radio" name="priority" value="high"> High</label></fieldset><label for="notes">Your feedback</label><textarea id="notes" name="notes" required></textarea><button id="add-context" type="button">Add project context</button><div id="context-container"></div><div class="row"><input id="consent" name="consent" type="checkbox" value="yes" required><label for="consent">I agree to submit this local test response</label></div><button id="response-submit" type="submit">Submit response</button></form>`, `document.querySelector('#add-context').onclick=()=>{setTimeout(()=>{document.querySelector('#context-container').innerHTML='<label for="context">Project context</label><input id="context" name="context">';},160)};`);
+      }
+      const submitMatch = url.pathname.match(/^\/forms\/(form-\d+)\/submit$/);
+      if (request.method === 'POST' && submitMatch && forms.has(submitMatch[1])) {
+        const body = await readForm();
+        if (body.get('csrf') !== csrf || !body.get('name')?.trim() || !/^\S+@\S+\.\S+$/.test(body.get('email') || '') || !body.get('topic') || !body.get('notes')?.trim() || body.get('consent') !== 'yes') return send('Response rejected', '<h1 id="error">Complete every required field and consent checkbox.</h1>', '', 422);
+        const receipt = { id: `receipt-${submissions.length + 1}`, formId: submitMatch[1], name: body.get('name'), email: body.get('email'), topic: body.get('topic'), notes: body.get('notes'), priority: body.get('priority'), context: body.get('context') };
+        submissions.push(receipt); events.push({ type: 'response-submitted', id: receipt.id });
+        return redirect(`/receipts/${receipt.id}`);
+      }
+      const receiptMatch = url.pathname.match(/^\/receipts\/(receipt-\d+)$/);
+      if (request.method === 'GET' && receiptMatch) {
+        const receipt = submissions.find(item => item.id === receiptMatch[1]);
+        if (receipt) return send('Submission received', `<h1 id="confirmation">Submission received</h1><p role="status">Your local response was saved exactly once.</p><dl><dt>Receipt</dt><dd id="receipt-id">${receipt.id}</dd><dt>Name</dt><dd>${escape(receipt.name)}</dd><dt>Topic</dt><dd>${escape(receipt.topic)}</dd><dt>Priority</dt><dd>${escape(receipt.priority)}</dd><dt>Feedback</dt><dd>${escape(receipt.notes)}</dd><dt>Project context</dt><dd>${escape(receipt.context)}</dd></dl><a id="another-form" href="/forms/new">Create another form</a>`);
+      }
+      if (request.method === 'GET' && url.pathname === '/lab') return send('Interaction lab', `<h1>Interaction lab</h1><p>Controls for deterministic browser testing.</p><label for="secret">Private input</label><input type="password" id="secret" value="hidden-fixture-value"><label for="readonly">Read only input</label><input id="readonly" value="do not change" readonly><button id="disabled" disabled>Disabled action</button><button id="replace">Replace control</button><label for="replaceable">Replaceable field</label><input id="replaceable"><label for="editable">Editable note</label><div id="editable" contenteditable="true" role="textbox" aria-label="Editable note" style="padding:12px;border:1px solid #cfdbce">Initial note</div><label for="keyboard">Keyboard test</label><input id="keyboard"><p id="key-result" role="status">No key pressed</p><button id="delayed">Show delayed result</button><p id="delayed-result" role="status"></p><form id="enter-form" action="/enter" method="get"><label for="enter-query">Search fixture</label><input id="enter-query" name="q"><button id="enter-submit">Search fixture</button></form><div style="height:1000px"></div><button id="bottom-button">Bottom action</button><p id="bottom-result"></p>`, `document.querySelector('#replace').onclick=()=>{document.querySelector('#replaceable').outerHTML='<input id="replaceable" aria-label="Replacement field">';};document.querySelector('#keyboard').onkeydown=event=>{document.querySelector('#key-result').textContent='Pressed '+event.key;};document.querySelector('#delayed').onclick=()=>setTimeout(()=>{document.querySelector('#delayed-result').textContent='Delayed content ready';},250);document.querySelector('#bottom-button').onclick=()=>{document.querySelector('#bottom-result').textContent='Bottom action completed';};`);
+      if (request.method === 'GET' && url.pathname === '/enter') return send('Keyboard search result', `<h1 id="enter-result">Search received: ${escape(url.searchParams.get('q'))}</h1>`);
+      if (request.method === 'GET' && url.pathname === '/benchmark') {
+        const rows = Array.from({ length: 18 }, (_, index) => `<article><h2>Research note ${index + 1}</h2><p>Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.</p><a id="note-${index + 1}" href="/lab#note-${index + 1}">Read note ${index + 1}</a></article>`).join('');
+        return send('Browser research reference', `<h1>Browser research reference</h1><p>A shared document for comparing observation output. All research notes and links belong to this local fixture.</p><form><label for="research-search">Search research</label><input id="research-search" placeholder="Find a note"><button id="research-submit">Search</button></form>${rows}`);
+      }
+      return send('Page not found', '<h1>Page not found</h1>', '', 404);
+    } catch { return send('Request failed', '<h1>Request failed</h1>', '', 400); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  return { origin: `http://127.0.0.1:${server.address().port}`, forms, submissions, events, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
+}
