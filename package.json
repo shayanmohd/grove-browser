@@ -2,6 +2,7 @@
   "name": "grove-browser",
   "version": "0.1.0",
   "description": "A focused, cross-platform browser with isolated spaces for people and agents.",
+  "homepage": "https://github.com/shayanmohd/grove-browser",
   "author": "Grove contributors",
   "license": "MIT",
   "private": true,

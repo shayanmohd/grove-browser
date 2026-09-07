@@ -100,7 +100,7 @@ Run the matching command on its native operating system. Installers are written 
 
 The [desktop workflow](.github/workflows/build.yml) runs validation, real Electron smoke tests, skill-driven form tests, and packaging on Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64. It runs on pull requests, pushes to `main` or `master`, and manual dispatch. Download packages from a completed workflow's artifacts. The workflow does not publish releases. See [testing on your devices](docs/device-testing.md) for Windows and Linux steps.
 
-Linux Debian packaging requires a project homepage. In GitHub Actions it is derived from the current repository automatically. For local Debian builds, configure a GitHub repository as the git remote so electron-builder can infer the project URL. See [packaging notes](docs/architecture.md#native-packaging) for details.
+The project homepage is declared in `package.json` for desktop packaging. Forks can update it to their own repository. See [packaging notes](docs/architecture.md#native-packaging) for details.
 
 Packages are unsigned development builds. macOS signing and notarization and Windows code signing are not configured. Automatic updates are not implemented.
 
