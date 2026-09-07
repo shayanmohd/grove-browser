@@ -44,6 +44,7 @@ Live public websites were read only. All test form submissions used fictional da
 - Development launches reported Electron's version as Grove's version. The displayed and API version now comes from the application's package metadata.
 - A rejected API grant could leave a space shown as agent-owned. Failure returns ownership to the human before surfacing the error.
 - The skill installer used Unix-only path containment checks. It now uses the native path separator on Windows too.
+- Windows CI exposed a Vitest parse failure when Git converted the standalone client's shebang file to CRLF. The same failure was reproduced locally with CRLF, and repository attributes now preserve LF text consistently on all platforms.
 
 ## Token measurements and limits
 
