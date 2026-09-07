@@ -428,8 +428,9 @@ export class BrowserController {
     };
     contents.on("did-start-loading", () => {
       if (!isCurrentView()) return;
+      // Subframes and error documents can also start loading. A new main-frame
+      // navigation or deliberate retry is responsible for clearing errors.
       tab.loading = true;
-      delete tab.error;
       this.emit();
     });
     contents.on("did-stop-loading", () => {

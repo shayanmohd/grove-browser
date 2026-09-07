@@ -7,7 +7,7 @@ Reviewed on September 7, 2026, on an Apple Silicon Mac running macOS 15.7.2, Nod
 | Check | Local result |
 | --- | --- |
 | TypeScript | Passed |
-| Unit and integration behavior tests | 94 passed |
+| Unit and integration behavior tests | 95 passed |
 | Native Electron smoke | 22 checks passed |
 | Grove skill end to end | 20 checks passed, 49 client commands |
 | Installed Grove skill | The same 20 checks passed using the installed copy |
@@ -47,6 +47,7 @@ Live public websites were read only. All test form submissions used fictional da
 - Windows CI exposed a Vitest parse failure when Git converted the standalone client's shebang file to CRLF. The same failure was reproduced locally with CRLF, and repository attributes now preserve LF text consistently on all platforms.
 - After its browser and skill tests passed, Windows packaging exposed PowerShell argument splitting in a dotted electron-builder override. The homepage now lives in package metadata, and the workflow uses simple native platform arguments.
 - An Intel CI run exposed a smoke-test race that focused a new split pane before its URL had committed. The test now waits for the expected loaded page before exercising focus.
+- An intermittent Windows retry check prompted a regression for late loading notifications: generic loading events must preserve a failed page's error until an actual new navigation or explicit retry. The regression failed before the fix. The smoke fixture also keeps its failure active until the retry button is visible.
 
 ## Token measurements and limits
 

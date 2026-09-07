@@ -269,6 +269,37 @@ describe("native browser lifecycle", () => {
     ).toBeUndefined();
   });
 
+  it("keeps a failed page recoverable through unrelated loading notifications", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/failing",
+    });
+    const page = contents(browser, id);
+    page.emit(
+      "did-fail-load",
+      {},
+      -102,
+      "ERR_CONNECTION_REFUSED",
+      "https://example.com/failing",
+      true,
+    );
+    page.emit("did-start-loading");
+    page.emit("did-stop-loading");
+    expect(browser.state.tabs.find((tab) => tab.id === id)?.error).toBe(
+      "ERR_CONNECTION_REFUSED",
+    );
+    await browser.dispatch({ type: "tab:reload", id });
+    expect(
+      browser.state.tabs.find((tab) => tab.id === id)?.error,
+    ).toBeUndefined();
+    expect(page.loadURL).toHaveBeenLastCalledWith(
+      "https://example.com/failing",
+    );
+  });
+
   it("clears a deleted personal partition even if no tab opened it this launch", async () => {
     const browser = controller();
     const existing = session.fromPartition(

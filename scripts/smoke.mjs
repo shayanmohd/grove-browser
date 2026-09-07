@@ -139,7 +139,9 @@ try {
   );
   const secondTab = state.tabs.find((tab) => !before.includes(tab.id)).id;
   await page.waitForFunction(async (id) => {
-    const tab = (await window.grove.getState()).tabs.find((item) => item.id === id);
+    const tab = (await window.grove.getState()).tabs.find(
+      (item) => item.id === id,
+    );
     return tab && tab.title === "Second page" && !tab.loading;
   }, secondTab);
   await page.evaluate(
@@ -308,8 +310,14 @@ try {
     state.tabs.find((tab) => tab.id === secondTab).url,
     `${origin}/recoverable`,
   );
+  assert.equal(state.activeTabId, secondTab);
+  const retryButton = page.getByRole("button", {
+    name: "Try again",
+    exact: false,
+  });
+  await retryButton.waitFor({ state: "visible" });
   failRecoverablePage = false;
-  await page.getByRole("button", { name: "Try again", exact: false }).click();
+  await retryButton.click();
   await page.waitForFunction(async (id) => {
     const tab = (await window.grove.getState()).tabs.find(
       (tab) => tab.id === id,
@@ -577,6 +585,34 @@ try {
     );
   }
   console.log(`Desktop smoke passed: ${checks} checks.`);
+} catch (error) {
+  if (app) {
+    try {
+      const diagnostic = await app.evaluate(async ({ BrowserWindow }) => {
+        const state =
+          await BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(
+            "window.grove.getState()",
+          );
+        return {
+          activeTabId: state.activeTabId,
+          splitTabId: state.splitTabId,
+          tabs: state.tabs.map(({ id, url, loading, error }) => ({
+            id,
+            url,
+            loading,
+            error,
+          })),
+        };
+      });
+      console.error(
+        "Temporary test profile state:",
+        JSON.stringify(diagnostic),
+      );
+    } catch {
+      /* Preserve the original failure if the application already quit. */
+    }
+  }
+  throw error;
 } finally {
   if (app) await app.close().catch(() => {});
   await new Promise((resolve) => fixture.close(resolve));
