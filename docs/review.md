@@ -46,6 +46,7 @@ Live public websites were read only. All test form submissions used fictional da
 - The skill installer used Unix-only path containment checks. It now uses the native path separator on Windows too.
 - Windows CI exposed a Vitest parse failure when Git converted the standalone client's shebang file to CRLF. The same failure was reproduced locally with CRLF, and repository attributes now preserve LF text consistently on all platforms.
 - After its browser and skill tests passed, Windows packaging exposed PowerShell argument splitting in a dotted electron-builder override. The homepage now lives in package metadata, and the workflow uses simple native platform arguments.
+- An Intel CI run exposed a smoke-test race that focused a new split pane before its URL had committed. The test now waits for the expected loaded page before exercising focus.
 
 ## Token measurements and limits
 

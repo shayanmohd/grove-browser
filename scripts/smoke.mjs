@@ -138,6 +138,10 @@ try {
     `${origin}/second`,
   );
   const secondTab = state.tabs.find((tab) => !before.includes(tab.id)).id;
+  await page.waitForFunction(async (id) => {
+    const tab = (await window.grove.getState()).tabs.find((item) => item.id === id);
+    return tab && tab.title === "Second page" && !tab.loading;
+  }, secondTab);
   await page.evaluate(
     (id) => window.grove.dispatch({ type: "tab:split", id }),
     secondTab,
