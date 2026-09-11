@@ -455,24 +455,20 @@ describe("authenticated local automation", () => {
     const first = controller.contents.scripts.at(-1)!.code;
     const firstRef = Number(first.match(/"firstRef":(\d+)/)![1]);
     expect(first.endsWith(`${tab.id}:0")`)).toBe(true);
-    controller.contents.emit(
-      "did-start-navigation",
-      {},
-      "https://example.com/next",
-      false,
-      true,
-    );
+    controller.contents.emit("did-start-navigation", {
+      url: "https://example.com/next",
+      isSameDocument: false,
+      isMainFrame: true,
+    });
     await request(`/tabs/${tab.id}/snapshot`);
     const second = controller.contents.scripts.at(-1)!.code;
     expect(Number(second.match(/"firstRef":(\d+)/)![1])).toBe(firstRef + 100);
     expect(second.endsWith(`${tab.id}:1")`)).toBe(true);
-    controller.contents.emit(
-      "did-start-navigation",
-      {},
-      "https://example.com/next#section",
-      true,
-      true,
-    );
+    controller.contents.emit("did-start-navigation", {
+      url: "https://example.com/next#section",
+      isSameDocument: true,
+      isMainFrame: true,
+    });
     await request(`/tabs/${tab.id}/snapshot`);
     expect(
       controller.contents.scripts.at(-1)!.code.endsWith(`${tab.id}:1")`),
@@ -638,6 +634,82 @@ describe("authenticated local automation", () => {
       controller.contents.inputs.map((input) => input.parameters.type),
     ).toEqual(["mouseMoved"]);
     expect(controller.contents.debugger.isAttached()).toBe(false);
+  });
+
+  it("withholds snapshots and click coordinates that cross a document navigation", async () => {
+    const { tab } = await createPage();
+    for (const operation of ["snapshot", "click", "press"]) {
+      controller.contents.result = () => {
+        controller.contents.emit("did-start-navigation", {
+          isMainFrame: true,
+          isSameDocument: false,
+        });
+        return { ok: true, text: "previous page", x: 20, y: 30 };
+      };
+      const response = await request(
+        `/tabs/${tab.id}/${operation}`,
+        "POST",
+        operation === "snapshot"
+          ? {}
+          : operation === "press"
+            ? { key: "Enter", ref: "@e1" }
+            : { ref: "@e1" },
+      );
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe("page_changed");
+      expect(controller.contents.inputs).toEqual([]);
+    }
+  });
+
+  it("stops native input when navigation begins before the press", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = { ok: true, x: 20, y: 30 };
+    controller.contents.afterInput = () =>
+      controller.contents.emit("did-start-navigation", {
+        isMainFrame: true,
+        isSameDocument: false,
+      });
+    expect(
+      (await request(`/tabs/${tab.id}/click`, "POST", { ref: "@e1" })).status,
+    ).toBe(409);
+    expect(
+      controller.contents.inputs.map((input) => input.parameters.type),
+    ).toEqual(["mouseMoved"]);
+    expect(controller.contents.debugger.isAttached()).toBe(false);
+  });
+
+  it("still releases the mouse when a valid press triggers navigation", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = { ok: true, x: 20, y: 30 };
+    controller.contents.afterInput = () => {
+      if (controller.contents.inputs.at(-1)?.parameters.type === "mousePressed")
+        controller.contents.emit("did-start-navigation", {
+          isMainFrame: true,
+          isSameDocument: false,
+        });
+    };
+    expect(
+      (await request(`/tabs/${tab.id}/click`, "POST", { ref: "@e1" })).status,
+    ).toBe(200);
+    expect(
+      controller.contents.inputs.map((input) => input.parameters.type),
+    ).toEqual(["mouseMoved", "mousePressed", "mouseReleased"]);
+  });
+
+  it("honors wait deadlines during loading and stalled page evaluation", async () => {
+    const { tab } = await createPage();
+    controller.contents.isLoadingMainFrame = () => true;
+    controller.contents.result = new Promise(() => {});
+    for (const timeoutMs of [50, 0]) {
+      const start = performance.now();
+      const response = await request(`/tabs/${tab.id}/wait`, "POST", {
+        text: "Missing",
+        timeoutMs,
+      });
+      expect(response.status).toBe(408);
+      expect((await response.json()).error.code).toBe("wait_timeout");
+      expect(performance.now() - start).toBeLessThan(1500);
+    }
   });
 
   it("bounds wait and scroll without accepting arbitrary code or invalid motion", async () => {

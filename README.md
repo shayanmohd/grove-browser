@@ -39,7 +39,7 @@ This is a working Electron browser and a portfolio project. Websites run in Chro
 
 Agent support is a control interface for an external agent. Grove does not bundle an AI model or require an AI subscription. The [automation guide](docs/automation.md) includes connection instructions and examples.
 
-The included [Grove skill](skills/grove-browser/SKILL.md) provides compact snapshots, stable element refs, trusted clicks and keys, scoped waits, and sequential action batches. In a reproducible four-page local comparison, its full snapshot output used **49.1% fewer tokens** than ego-browser 0.4.7.3. This measures observation text, not total model usage or universal browser compatibility. Read the [benchmark methodology and captured results](docs/benchmarks.md) and [local review report](docs/review.md).
+The included [Grove skill](skills/grove-browser/SKILL.md) provides compact snapshots, stable element refs, trusted clicks and keys, scoped waits, and sequential action batches. In a reproducible four-page local comparison, its full snapshot output used **48.1% fewer tokens** than ego-browser 0.4.7.4. This measures observation text, not total model usage or universal browser compatibility. Read the [benchmark methodology and captured results](docs/benchmarks.md) and [local review report](docs/review.md), including the [ego source comparison](docs/ego-comparison.md).
 
 ## Use the Grove skill
 

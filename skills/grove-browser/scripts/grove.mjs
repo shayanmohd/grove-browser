@@ -160,10 +160,19 @@ export function formatSnapshot(snapshot) {
   if (snapshot.text) lines.push("", printable(snapshot.text).trim());
   if (snapshot.interactables?.length) {
     lines.push("", "Controls:");
-    for (const control of snapshot.interactables)
+    for (const control of snapshot.interactables) {
       lines.push(
         `${line(control.ref || control.selector)} ${line(control.role || control.tag)} ${JSON.stringify(line(control.label))}${control.disabled ? " [disabled]" : ""}`,
       );
+      for (const option of control.options || [])
+        lines.push(
+          `  ${JSON.stringify(line(option.value))}: ${JSON.stringify(line(option.label))}${option.disabled ? " [disabled]" : ""}`,
+        );
+      if (control.optionsTruncated)
+        lines.push(
+          "  More options omitted. Scope the select or inspect it in Grove.",
+        );
+    }
   }
   if (snapshot.truncated)
     lines.push(

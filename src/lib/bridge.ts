@@ -4,67 +4,21 @@ import type {
   GroveBridge,
 } from "../../shared/types";
 import { HOME_URL, id, initialState, newTab } from "../../shared/state";
+import { restoreState } from "../../shared/restore";
 import { hostname, normalizeUrl } from "../../shared/url";
 
 const STORAGE_KEY = "grove-preview-v1";
 export function createPreviewBridge(): GroveBridge {
   let state = initialState();
   try {
-    const saved = JSON.parse(
-      localStorage.getItem(STORAGE_KEY) || "null",
-    ) as BrowserState | null;
-    if (
-      saved &&
-      Array.isArray(saved.spaces) &&
-      saved.spaces.length &&
-      saved.spaces.every(
-        (space) =>
-          space &&
-          typeof space.id === "string" &&
-          typeof space.name === "string",
-      ) &&
-      Array.isArray(saved.tabs) &&
-      saved.tabs.length &&
-      saved.settings
-    ) {
-      state = {
-        ...state,
-        ...saved,
-        platform: "web",
-        automation: { running: false, port: null },
-      };
-      state.spaces = state.spaces.filter((space) => space.kind === "personal");
-      if (!state.spaces.length) state = initialState();
-      state.tabs = state.tabs.filter(
-        (tab) => tab && state.spaces.some((space) => space.id === tab.spaceId),
-      );
-      if (!state.settings.restoreSession) state.tabs = [];
-      for (const space of state.spaces)
-        if (!state.tabs.some((tab) => tab.spaceId === space.id))
-          state.tabs.push(newTab(space.id));
-      state.tabs = state.tabs.map((tab) => ({
-        ...tab,
-        loading: false,
-        canGoBack: false,
-        canGoForward: false,
-      }));
-      if (!state.spaces.some((space) => space.id === state.activeSpaceId))
-        state.activeSpaceId = state.spaces[0].id;
-      if (
-        !state.tabs.some(
-          (tab) =>
-            tab.id === state.activeTabId && tab.spaceId === state.activeSpaceId,
-        )
-      )
-        state.activeTabId = state.tabs.find(
-          (tab) => tab.spaceId === state.activeSpaceId,
-        )!.id;
-      state.splitTabId = null;
-      state.settings.automationEnabled = false;
-      state.activity = [];
-    }
+    state = restoreState(
+      JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"),
+      "web",
+      state.version,
+    );
+    state.settings.automationEnabled = false;
   } catch {
-    /* A clean session is safe when browser storage is unavailable. */
+    state = initialState();
   }
   const listeners = new Set<(value: BrowserState) => void>();
   const closed: BrowserState["tabs"] = [];

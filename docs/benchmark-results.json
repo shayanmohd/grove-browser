@@ -6,75 +6,75 @@
     {
       "name": "form",
       "ego": {
-        "characters": 1002,
+        "characters": 991,
         "tokens": 290,
-        "sha256": "284e0676125d08e2a6d18426425dffd79793c8059980cc1d28d4d3205b3bdac7"
+        "sha256": "66e1d6db994d117a00b826efbd2391851cac9e431ec8105904dc1758269eb3fb"
       },
       "grove": {
-        "characters": 499,
-        "tokens": 138,
-        "sha256": "3a33549f8911040414b59ccd159d9153f7bf8a5ece57f090a501704a55d0ba22"
+        "characters": 531,
+        "tokens": 148,
+        "sha256": "64158a3a9cafbac15a84d564075e4fc26907ef7bd1acf33a816efb857e1fac62"
       },
-      "reductionPercent": 52.4
+      "reductionPercent": 49
     },
     {
       "name": "created-form",
       "ego": {
-        "characters": 1600,
+        "characters": 1586,
         "tokens": 447,
-        "sha256": "bdf73176cc40c7b28242d7b1fc574e1469d9e935a2acef230aecf22a4bfddb6b"
+        "sha256": "80f1cbd1caf552e082453a00cc1d62f5a60050ff190c4bf494ed522d079a192c"
       },
       "grove": {
-        "characters": 867,
-        "tokens": 226,
-        "sha256": "d7963c91d4e4533cbde1ea4c6871b53a55eed5bd17a3cfa719e9a5147ad6bf65"
+        "characters": 920,
+        "tokens": 247,
+        "sha256": "3d8b87f40fe380b73229c964fc4ee06231ebbc88e45d736e3a080a090fae2cea"
       },
-      "reductionPercent": 49.4
+      "reductionPercent": 44.7
     },
     {
       "name": "receipt",
       "ego": {
         "characters": 1405,
         "tokens": 368,
-        "sha256": "4b66cbac92f0fb7f1bbc581e36d702e4a29356f2dcf305bda9b3178148fa022e"
+        "sha256": "3cc47825c1909f0592fc5f74a5d16b2818e903147f8bb2bbb016c46e28f45f88"
       },
       "grove": {
-        "characters": 638,
+        "characters": 636,
         "tokens": 155,
-        "sha256": "bef71b3b5622c2381e6dcf08fa193ade92c2b5eb33a6fbb724ddb8f18b3f54c4"
+        "sha256": "a259bb6cca8d8b55a6fc59d55d413e7ca379da58058d8722c5f240b7494bf380"
       },
       "reductionPercent": 57.9
     },
     {
       "name": "reference",
       "ego": {
-        "characters": 8066,
+        "characters": 8086,
         "tokens": 1986,
-        "sha256": "0cc4daec1b9cbde15a3048ab31c0f7298a8cfab95a7212524180fcecdc6af835"
+        "sha256": "241897f82234ae3a5b6f73a5a4075eb46233d98447f0a01a7874f4ca19cabf5d"
       },
       "grove": {
-        "characters": 4971,
+        "characters": 4933,
         "tokens": 1055,
-        "sha256": "e31d0e332a11c3ba0c7f8cd8ac25de7c08a373529c2ef6438438c59115734be6"
+        "sha256": "e1dcb5c4182aaf4ba8639711d06b2f8f541f95e6e5836ac9d52d3265c1e71ed8"
       },
       "reductionPercent": 46.9
     }
   ],
   "totals": {
     "egoTokens": 3091,
-    "groveTokens": 1574,
-    "reductionPercent": 49.1
+    "groveTokens": 1605,
+    "reductionPercent": 48.1
   },
   "groveSkill": {
     "SKILL.md": {
-      "characters": 3500,
-      "tokens": 717,
-      "sha256": "8a498b22295e2276bbe7a5579ecf80626d08a9fe90a3be23bac83f15ef525e35"
+      "characters": 3553,
+      "tokens": 726,
+      "sha256": "2393a741b9dcdc7001306edb693c3fa9405a1c0a2dfffb239977851bb7c4adfa"
     },
     "references/actions.md": {
-      "characters": 4879,
-      "tokens": 1147,
-      "sha256": "8f7362a7500e79fee09889e8e589eb97f8ed99b4ce1dea8c8c3529e3bce0a1f5"
+      "characters": 5608,
+      "tokens": 1299,
+      "sha256": "92be2f6bec35dd17a96bd832e24cd2939c70b02e85cb9e656eb8d16272f46465"
     },
     "references/connection.md": {
       "characters": 2225,

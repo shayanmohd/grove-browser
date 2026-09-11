@@ -1,3 +1,4 @@
+import { waitForState } from "./wait.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -95,7 +96,9 @@ const wait = (selector, text) => ({
 });
 try {
   browser = await electron.launch({
-    ...(process.env.GROVE_EXECUTABLE ? { executablePath: resolve(process.env.GROVE_EXECUTABLE) } : {}),
+    ...(process.env.GROVE_EXECUTABLE
+      ? { executablePath: resolve(process.env.GROVE_EXECUTABLE) }
+      : {}),
     args: process.env.GROVE_EXECUTABLE ? [] : [resolve("out/main/index.js")],
     env: environment,
   });
@@ -107,9 +110,7 @@ try {
       settings: { automationEnabled: true },
     }),
   );
-  await chrome.waitForFunction(
-    async () => (await window.grove.getState()).automation.running,
-  );
+  await waitForState(chrome, (state) => state.automation.running);
   const connection = await chrome.evaluate(() =>
     window.grove.getAgentConnection(),
   );
@@ -247,9 +248,15 @@ try {
     "Edited through the skill",
   );
   const scoped = await json(["snapshot", tab.id, "--selector", "#editable"]);
-  assert.equal(scoped.text, "Edited through the skill");
+  assert.equal(scoped.text, "");
   assert.ok(!scoped.text.includes("Interaction lab"));
-  passed("contenteditable filling and scoped observations work");
+  assert.equal(
+    (await json(["snapshot", tab.id, "--selector", "#editable-result"])).text,
+    "Edited through the skill",
+  );
+  passed(
+    "contenteditable fill is verified by the page while draft values stay out of snapshots",
+  );
   const partial = await cli(
     ["batch", tab.id, "--json"],
     [
@@ -335,6 +342,130 @@ try {
   );
   passed(
     "full-content observation retains every reference page note and control",
+  );
+  await json(["navigate", tab.id, `${fixture.origin}/edges`]);
+  const edges = await observe(tab.id);
+  assert.ok(!JSON.stringify(edges).includes("secret"));
+  assert.ok(
+    !edges.interactables.some(
+      (control) => control.label === "Invisible button",
+    ),
+  );
+  assert.ok(!edges.text.includes("Disclosure revealed"));
+  assert.match(edges.text, /Visible start\s+Visible end/);
+  ref(edges, "Save caption");
+  ref(edges, "Action caption");
+  const choice = edges.interactables.find(
+    (control) => control.label === "Option choice",
+  );
+  assert.ok(
+    choice.options.some(
+      (option) => option.value === "blocked" && option.disabled,
+    ),
+  );
+  assert.ok(
+    (await cli(["snapshot", tab.id, "--selector", "#choice"])).output.includes(
+      '"last": "Last"',
+    ),
+  );
+  passed(
+    "snapshots exclude hidden content and drafts, retain line breaks and label input buttons",
+  );
+  await cli(["click", tab.id, ref(edges, "Open details")]);
+  await cli(["wait", tab.id, "--stdin"], {
+    text: "Disclosure revealed",
+    timeoutMs: 1000,
+  });
+  passed("summary disclosures are discoverable and clickable through refs");
+  for (const label of ["Rich editor", "Plain editor"]) {
+    await cli(
+      ["fill", tab.id, ref(edges, label), "--stdin"],
+      "Unicode café 🌱\nsecond line",
+    );
+    const echoed = await json([
+      "snapshot",
+      tab.id,
+      "--selector",
+      "#field-result",
+    ]);
+    assert.match(echoed.text, /Unicode café 🌱\s+second line/);
+  }
+  passed(
+    "empty and plaintext-only contenteditable fields accept Unicode and multiline text",
+  );
+  for (const [label, value] of [
+    ["Numeric input", "not a number"],
+    ["Date input", "2026-02-30"],
+    ["Range input", "42"],
+    ["Color input", "#ffffff"],
+    ["Option choice", "blocked"],
+    ["Option choice", "duplicate"],
+    ["Multiple choices", "a"],
+    ["Becomes read only", "changed"],
+    ["Replaced on focus", "changed"],
+  ]) {
+    await cli(["fill", tab.id, ref(edges, label), "--stdin"], value, {
+      failure: true,
+    });
+    assert.ok(
+      !(
+        await json(["snapshot", tab.id, "--selector", "#field-result"])
+      ).text.includes("=changed"),
+    );
+  }
+  passed(
+    "invalid values, unsupported fields, disabled option groups, duplicate options and focus mutations fail safely",
+  );
+  for (const [label, value, expected] of [
+    ["Numeric input", "42", "numeric=42"],
+    ["Date input", "2026-09-12", "date=2026-09-12"],
+    ["Option choice", "last", "choice=last"],
+  ]) {
+    await cli(["fill", tab.id, ref(edges, label), "--stdin"], value);
+    assert.equal(
+      (await json(["snapshot", tab.id, "--selector", "#field-result"])).text,
+      expected,
+    );
+  }
+  passed("valid numeric, date and single select fills update the actual page");
+  for (const [field, button, type] of [
+    ["Popup message", "Submit popup", "application/x-www-form-urlencoded"],
+    ["Multipart message", "Submit multipart", "multipart/form-data"],
+  ]) {
+    const message = `${field}: café 🌱 & = +`;
+    const before = (await json(["tabs", space.id])).tabs.map((item) => item.id);
+    await json(
+      ["batch", tab.id],
+      [fill(ref(edges, field), message), click(ref(edges, button))],
+    );
+    const popup = (await json(["tabs", space.id])).tabs.find(
+      (item) => !before.includes(item.id),
+    );
+    assert.ok(popup, "Submission opens one new agent tab");
+    await cli(["wait", popup.id, "--stdin"], {
+      selector: "#popup-confirmation",
+      timeoutMs: 5000,
+    });
+    assert.ok((await observe(popup.id)).text.includes(message));
+    const receipt = fixture.events
+      .filter((event) => event.type === "popup-submitted")
+      .at(-1);
+    assert.equal(receipt.method, "POST");
+    assert.deepEqual(receipt.fields, { message });
+    assert.ok(receipt.contentType.startsWith(type));
+    assert.equal(receipt.referer, `${fixture.origin}/edges`);
+    assert.equal(
+      (await chrome.evaluate(() => window.grove.getState())).activeTabId,
+      original,
+    );
+    await cli(["close", popup.id]);
+  }
+  assert.equal(
+    fixture.events.filter((event) => event.type === "popup-submitted").length,
+    2,
+  );
+  passed(
+    "new-tab forms preserve encoded and multipart POST bodies, referrers and background ownership exactly once",
   );
   if (process.env.GROVE_TEST_PUBLIC === "1") {
     for (const [url, expected] of [

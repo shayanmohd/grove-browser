@@ -10,8 +10,6 @@ Create a form
 Form title
 Description
 Template
-Product feedback
-Research request
 Create form
 Local test fixture. Submissions remain on this machine and are discarded when the server closes.
 
@@ -23,4 +21,6 @@ Controls:
 @e5 input "Form title"
 @e6 textarea "Description"
 @e7 select "Template"
+  "feedback": "Product feedback"
+  "research": "Research request"
 @e8 button "Create form"

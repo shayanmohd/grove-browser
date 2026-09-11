@@ -1,3 +1,4 @@
+import { poll, waitForState } from "./wait.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
@@ -138,12 +139,14 @@ try {
     `${origin}/second`,
   );
   const secondTab = state.tabs.find((tab) => !before.includes(tab.id)).id;
-  await page.waitForFunction(async (id) => {
-    const tab = (await window.grove.getState()).tabs.find(
-      (item) => item.id === id,
-    );
-    return tab && tab.title === "Second page" && !tab.loading;
-  }, secondTab);
+  await waitForState(
+    page,
+    (state, id) => {
+      const tab = state.tabs.find((item) => item.id === id);
+      return tab && tab.title === "Second page" && !tab.loading;
+    },
+    secondTab,
+  );
   await page.evaluate(
     (id) => window.grove.dispatch({ type: "tab:split", id }),
     secondTab,
@@ -166,15 +169,25 @@ try {
         bounds: view.getBounds(),
       })),
   );
+  // Native focus events require an active desktop window. Test the same state
+  // as a person clicking a pane, including when another app was foregrounded.
+  await app.evaluate(({ app, BrowserWindow }) => {
+    if (process.platform === "darwin") app.focus({ steal: true });
+    BrowserWindow.getAllWindows()[0].focus();
+  });
+  await poll(
+    () =>
+      app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].isFocused(),
+      ),
+    { label: "foreground desktop window" },
+  );
   await app.evaluate(({ BrowserWindow }, url) => {
     BrowserWindow.getAllWindows()[0]
       .contentView.children.find((view) => view.webContents.getURL() === url)
       .webContents.focus();
   }, `${origin}/second`);
-  await page.waitForFunction(
-    async (id) => (await window.grove.getState()).activeTabId === id,
-    secondTab,
-  );
+  await waitForState(page, (state, id) => state.activeTabId === id, secondTab);
   await page.evaluate(() =>
     window.grove.dispatch({ type: "page:zoom", direction: "in" }),
   );
@@ -205,10 +218,7 @@ try {
       .contentView.children.find((view) => view.webContents.getURL() === url)
       .webContents.focus();
   }, `${origin}/`);
-  await page.waitForFunction(
-    async (id) => (await window.grove.getState()).activeTabId === id,
-    firstTab,
-  );
+  await waitForState(page, (state, id) => state.activeTabId === id, firstTab);
   checked(
     "native split focus updates page controls while keeping pane positions stable",
   );
@@ -276,13 +286,17 @@ try {
       }),
     secondTab,
   );
-  await page.waitForFunction(async (id) => {
-    const current = await window.grove.getState();
-    return (
-      current.tabs.find((tab) => tab.id === id)?.url === "grove://newtab" &&
-      !current.splitTabId
-    );
-  }, secondTab);
+  await waitForState(
+    page,
+    (state, id) => {
+      const current = state;
+      return (
+        current.tabs.find((tab) => tab.id === id)?.url === "grove://newtab" &&
+        !current.splitTabId
+      );
+    },
+    secondTab,
+  );
   assert.equal(
     await app.evaluate(
       ({ BrowserWindow }) =>
@@ -299,10 +313,9 @@ try {
     ({ id, url }) => window.grove.dispatch({ type: "tab:navigate", id, url }),
     { id: secondTab, url: `${origin}/recoverable` },
   );
-  await page.waitForFunction(
-    async (id) =>
-      !!(await window.grove.getState()).tabs.find((tab) => tab.id === id)
-        ?.error,
+  await waitForState(
+    page,
+    (state, id) => !!state.tabs.find((tab) => tab.id === id)?.error,
     secondTab,
   );
   state = await page.evaluate(() => window.grove.getState());
@@ -318,14 +331,16 @@ try {
   await retryButton.waitFor({ state: "visible" });
   failRecoverablePage = false;
   await retryButton.click();
-  await page.waitForFunction(async (id) => {
-    const tab = (await window.grove.getState()).tabs.find(
-      (tab) => tab.id === id,
-    );
-    return (
-      tab && !tab.error && !tab.loading && tab.title === "Grove test garden"
-    );
-  }, secondTab);
+  await waitForState(
+    page,
+    (state, id) => {
+      const tab = state.tabs.find((tab) => tab.id === id);
+      return (
+        tab && !tab.error && !tab.loading && tab.title === "Grove test garden"
+      );
+    },
+    secondTab,
+  );
   checked(
     "failed navigation keeps its destination and Try again recovers the intended page",
   );
@@ -362,9 +377,7 @@ try {
       settings: { automationEnabled: true },
     }),
   );
-  await page.waitForFunction(
-    async () => (await window.grove.getState()).automation.running,
-  );
+  await waitForState(page, (state) => state.automation.running);
   const connection = await page.evaluate(() =>
     window.grove.getAgentConnection(),
   );
@@ -454,9 +467,7 @@ try {
       settings: { theme: "light", automationEnabled: false },
     }),
   );
-  await page.waitForFunction(
-    async () => !(await window.grove.getState()).automation.running,
-  );
+  await waitForState(page, (state) => !state.automation.running);
   if (process.env.GROVE_CAPTURE_SCREENSHOTS === "1") {
     await mkdir("docs/images", { recursive: true });
     await page.waitForTimeout(350);
@@ -528,10 +539,8 @@ try {
       (url) => window.grove.dispatch({ type: "tab:create", url }),
       origin,
     );
-    await page.waitForFunction(async () =>
-      (await window.grove.getState()).tabs.some(
-        (tab) => tab.title === "Grove test garden",
-      ),
+    await waitForState(page, (state) =>
+      state.tabs.some((tab) => tab.title === "Grove test garden"),
     );
     assert.equal(
       await app.evaluate(({ session }) =>
@@ -565,12 +574,8 @@ try {
     );
     assert.equal(listenersAfterClose, 0);
     page = await nextWindow;
-    await page.waitForFunction(
-      async () =>
-        !!window.grove &&
-        (await window.grove.getState()).tabs.some(
-          (tab) => tab.title === "Grove test garden",
-        ),
+    await waitForState(page, (state) =>
+      state.tabs.some((tab) => tab.title === "Grove test garden"),
     );
     assert.equal(
       await app.evaluate(({ session }) =>

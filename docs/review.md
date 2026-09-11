@@ -1,21 +1,21 @@
 # Local review of Grove 0.1.0
 
-Reviewed on September 7, 2026, on an Apple Silicon Mac running macOS 15.7.2, Node.js 24.19.0, and Electron 44.2.0. This is a development review, not an independent security certification.
+Reviewed on September 11, 2026, on an Apple Silicon Mac running macOS 15.7.2, Node.js 24.19.0, and Electron 44.2.0. This is a development review, not an independent security certification.
 
 ## Results
 
 | Check | Local result |
 | --- | --- |
 | TypeScript | Passed |
-| Unit and integration behavior tests | 95 passed |
+| Unit and integration behavior tests | 115 passed |
 | Native Electron smoke | 22 checks passed |
-| Grove skill end to end | 20 checks passed, 49 client commands |
-| Installed Grove skill | The same 20 checks passed using the installed copy |
+| Grove skill end to end | 26 checks passed, 95 client commands |
+| Installed Grove skill | The same 26 checks passed using the installed copy |
 | Public sites through the skill | Example.com, MDN, and Wikipedia opened and were read successfully |
 | Desktop production compilation | Passed |
 | Web preview production compilation | Passed |
 | macOS ARM64 packaging | DMG and ZIP built successfully |
-| Packaged macOS app with installed skill | All 20 skill checks passed against `Grove.app` |
+| Packaged macOS app with installed skill | All 26 skill checks passed against `Grove.app` |
 | Dependency audit | No reported vulnerabilities in `npm audit` on the review date |
 | Skill metadata validation | Passed the skill-creator validator |
 | Authored punctuation scan | Passed, including captured fixture text |
@@ -46,13 +46,21 @@ Live public websites were read only. All test form submissions used fictional da
 - The skill installer used Unix-only path containment checks. It now uses the native path separator on Windows too.
 - Windows CI exposed a Vitest parse failure when Git converted the standalone client's shebang file to CRLF. The same failure was reproduced locally with CRLF, and repository attributes now preserve LF text consistently on all platforms.
 - After its browser and skill tests passed, Windows packaging exposed PowerShell argument splitting in a dotted electron-builder override. The homepage now lives in package metadata, and the workflow uses simple native platform arguments.
-- An Intel CI run exposed a smoke-test race that focused a new split pane before its URL had committed. The test now waits for the expected loaded page before exercising focus.
+- Native split testing exposed two issues: the harness treated unresolved asynchronous state predicates as success, and background page navigation could retain focus before a pane became active. State waits now await and poll resolved values. Remote pages disable focus on navigation, pane clicks update the toolbar even when focus is unchanged, and native focus tests activate their desktop window explicitly.
 - An intermittent Windows retry check prompted a regression for late loading notifications: generic loading events must preserve a failed page's error until an actual new navigation or explicit retry. The regression failed before the fix. The smoke fixture also keeps its failure active until the retry button is visible.
+
+## September source and form review
+
+The [ego comparison](ego-comparison.md) records the public source revision, same-device execution, and remaining differences. The additional skill checks cover hidden and closed disclosure text, submit-input captions, select option values, disabled option groups, duplicate options, invalid dates and numbers, fields changed during focus, and empty or plaintext-only editable regions with Unicode text.
+
+New-tab form tests submit URL-encoded and multipart bodies, including Unicode and reserved characters. They verify the exact server fields, referrer, background space, receipt page, and one request per form. Permission regressions cover separate microphone/camera grants, deleted spaces, and same-URL reloads while a prompt is pending. Saved-state tests cover duplicate identities, invalid URLs, corrupt preview data, and the tab limit across spaces.
+
+The dependency review upgraded Vitest to 4.1.11 to address [GHSA-82fw-gwwq-j7x9](https://github.com/vitest-dev/vitest/security/advisories/GHSA-82fw-gwwq-j7x9). The final local audit reported no vulnerabilities. This concerns development tooling; Grove does not expose a Vitest server in its desktop app.
 
 ## Token measurements and limits
 
-The [benchmark report](benchmarks.md) compares captured outputs against ego-browser 0.4.7.3 on the same four local pages. Grove used 49.1% fewer snapshot tokens without truncating those pages. The report includes captured text and a tokenizer script. It does not establish a universal reliability ranking or total model-token savings.
+The [benchmark report](benchmarks.md) compares captured outputs against ego-browser 0.4.7.4 on the same four local pages. Grove used 48.1% fewer snapshot tokens without truncating those pages. The report includes captured text and a tokenizer script. It does not establish a universal reliability ranking or total model-token savings.
 
 Windows x64, Linux x64, and Intel macOS have native CI test and packaging jobs. This local report does not substitute for those jobs or tests on the owner's physical Windows and Linux devices. Use the [device guide](device-testing.md) for installation and manual checks.
 
-Remaining limits include unsigned development packages, no automatic updates, no shared personal login state for agents, no iframe or shadow-root automation, no canvas-editor or file-upload actions, and no extension, password-manager, sync, or DRM compatibility guarantee. A small set of public website reads cannot establish compatibility with every website. The skill's static instructions received a separate fresh-reader review; the executed local suite was run by the implementing agent.
+Remaining limits include unsigned development packages, no automatic updates, no shared personal login state for agents, no iframe or shadow-root automation, no canvas-editor, file-upload, or JavaScript dialog actions, and no extension, password-manager, sync, or DRM compatibility guarantee. A small set of public website reads cannot establish compatibility with every website. The skill's static instructions received a separate fresh-reader review; the executed local suite was run by the implementing agent.

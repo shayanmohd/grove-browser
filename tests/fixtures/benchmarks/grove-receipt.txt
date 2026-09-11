@@ -7,9 +7,7 @@ Create a form
 Interaction lab
 Reference page
 Submission received
-
 Your local response was saved exactly once.
-
 Receipt
 receipt-1
 Name

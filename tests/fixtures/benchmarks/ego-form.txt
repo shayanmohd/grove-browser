@@ -2,26 +2,26 @@ root
   container
     text "Grove form lab"
     container "Lab navigation"
-      anchor [ref=168, loc=href:/, url=http://127.0.0.1:3000/]
+      anchor [ref=12, loc=href:/, url=http://127.0.0.1:3000/]
         text "Overview"
-      anchor [ref=170, loc=href:/forms/new, url=http://127.0.0.1:3000/forms/new]
+      anchor [ref=14, loc=href:/forms/new, url=http://127.0.0.1:3000/forms/new]
         text "Create a form"
-      anchor [ref=172, loc=href:/lab, url=http://127.0.0.1:3000/lab]
+      anchor [ref=16, loc=href:/lab, url=http://127.0.0.1:3000/lab]
         text "Interaction lab"
-      anchor [ref=174, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
+      anchor [ref=18, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
         text "Reference page"
   container
     heading
       text "Create a form"
     form
       text "Form title"
-      textbox [ref=158, loc=css:input[name="title"]]
+      textbox [ref=2, loc=css:input[name="title"]]
       text "Description"
-      textbox [ref=159, loc=css:textarea[name="description"]]
+      textbox [ref=3, loc=css:textarea[name="description"]]
       text "Template"
-      combobox [ref=160, loc=css:select[name="template"]]
+      combobox [ref=4, loc=css:select[name="template"]]
         text "Product feedback"
-      button [ref=189, loc=unstable]
+      button [ref=33, loc=unstable]
         text "Create form"
   container
     text "Local test fixture. Submissions remain on this machine and are discarded when the server closes."

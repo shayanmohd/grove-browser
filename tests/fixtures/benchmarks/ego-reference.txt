@@ -2,13 +2,13 @@ root
   container
     text "Grove form lab"
     container "Lab navigation"
-      anchor [ref=13, loc=href:/, url=http://127.0.0.1:3000/]
+      anchor [ref=162, loc=href:/, url=http://127.0.0.1:3000/]
         text "Overview"
-      anchor [ref=15, loc=href:/forms/new, url=http://127.0.0.1:3000/forms/new]
+      anchor [ref=164, loc=href:/forms/new, url=http://127.0.0.1:3000/forms/new]
         text "Create a form"
-      anchor [ref=17, loc=href:/lab, url=http://127.0.0.1:3000/lab]
+      anchor [ref=166, loc=href:/lab, url=http://127.0.0.1:3000/lab]
         text "Interaction lab"
-      anchor [ref=19, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
+      anchor [ref=168, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
         text "Reference page"
   container
     heading
@@ -17,136 +17,136 @@ root
       text "A shared document for comparing observation output. All research notes and links belong to this local fixture."
     form
       text "Search research"
-      textbox [ref=2, loc=css:input[placeholder="Find a note"]]
+      textbox [ref=154, loc=css:input[placeholder="Find a note"]]
         text "Find a note"
         container
-      button [ref=7, loc=unstable]
+      button [ref=179, loc=unstable]
         text "Search"
     container
       heading
         text "Research note 1"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=35, loc=href:/lab#note-1, url=http://127.0.0.1:3000/lab#note-1]
+      anchor [ref=186, loc=href:/lab#note-1, url=http://127.0.0.1:3000/lab#note-1]
         text "Read note 1"
     container
       heading
         text "Research note 2"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=42, loc=href:/lab#note-2, url=http://127.0.0.1:3000/lab#note-2]
+      anchor [ref=193, loc=href:/lab#note-2, url=http://127.0.0.1:3000/lab#note-2]
         text "Read note 2"
     container
       heading
         text "Research note 3"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=49, loc=href:/lab#note-3, url=http://127.0.0.1:3000/lab#note-3]
+      anchor [ref=200, loc=href:/lab#note-3, url=http://127.0.0.1:3000/lab#note-3]
         text "Read note 3"
     container
       heading
         text "Research note 4"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=56, loc=href:/lab#note-4, url=http://127.0.0.1:3000/lab#note-4]
+      anchor [ref=207, loc=href:/lab#note-4, url=http://127.0.0.1:3000/lab#note-4]
         text "Read note 4"
     container
       heading
         text "Research note 5"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=63, loc=href:/lab#note-5, url=http://127.0.0.1:3000/lab#note-5]
+      anchor [ref=214, loc=href:/lab#note-5, url=http://127.0.0.1:3000/lab#note-5]
         text "Read note 5"
     container
       heading
         text "Research note 6"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=70, loc=href:/lab#note-6, url=http://127.0.0.1:3000/lab#note-6]
+      anchor [ref=221, loc=href:/lab#note-6, url=http://127.0.0.1:3000/lab#note-6]
         text "Read note 6"
     container
       heading
         text "Research note 7"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=77, loc=href:/lab#note-7, url=http://127.0.0.1:3000/lab#note-7]
+      anchor [ref=228, loc=href:/lab#note-7, url=http://127.0.0.1:3000/lab#note-7]
         text "Read note 7"
     container
       heading
         text "Research note 8"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=84, loc=href:/lab#note-8, url=http://127.0.0.1:3000/lab#note-8]
+      anchor [ref=235, loc=href:/lab#note-8, url=http://127.0.0.1:3000/lab#note-8]
         text "Read note 8"
     container
       heading
         text "Research note 9"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=91, loc=href:/lab#note-9, url=http://127.0.0.1:3000/lab#note-9]
+      anchor [ref=242, loc=href:/lab#note-9, url=http://127.0.0.1:3000/lab#note-9]
         text "Read note 9"
     container
       heading
         text "Research note 10"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=98, loc=href:/lab#note-10, url=http://127.0.0.1:3000/lab#note-10]
+      anchor [ref=249, loc=href:/lab#note-10, url=http://127.0.0.1:3000/lab#note-10]
         text "Read note 10"
     container
       heading
         text "Research note 11"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=105, loc=href:/lab#note-11, url=http://127.0.0.1:3000/lab#note-11]
+      anchor [ref=256, loc=href:/lab#note-11, url=http://127.0.0.1:3000/lab#note-11]
         text "Read note 11"
     container
       heading
         text "Research note 12"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=112, loc=href:/lab#note-12, url=http://127.0.0.1:3000/lab#note-12]
+      anchor [ref=263, loc=href:/lab#note-12, url=http://127.0.0.1:3000/lab#note-12]
         text "Read note 12"
     container
       heading
         text "Research note 13"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=119, loc=href:/lab#note-13, url=http://127.0.0.1:3000/lab#note-13]
+      anchor [ref=270, loc=href:/lab#note-13, url=http://127.0.0.1:3000/lab#note-13]
         text "Read note 13"
     container
       heading
         text "Research note 14"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=126, loc=href:/lab#note-14, url=http://127.0.0.1:3000/lab#note-14]
+      anchor [ref=277, loc=href:/lab#note-14, url=http://127.0.0.1:3000/lab#note-14]
         text "Read note 14"
     container
       heading
         text "Research note 15"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=133, loc=href:/lab#note-15, url=http://127.0.0.1:3000/lab#note-15]
+      anchor [ref=284, loc=href:/lab#note-15, url=http://127.0.0.1:3000/lab#note-15]
         text "Read note 15"
     container
       heading
         text "Research note 16"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=140, loc=href:/lab#note-16, url=http://127.0.0.1:3000/lab#note-16]
+      anchor [ref=291, loc=href:/lab#note-16, url=http://127.0.0.1:3000/lab#note-16]
         text "Read note 16"
     container
       heading
         text "Research note 17"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=4, loc=href:/lab#note-17, url=http://127.0.0.1:3000/lab#note-17]
+      anchor [ref=298, loc=href:/lab#note-17, url=http://127.0.0.1:3000/lab#note-17]
         text "Read note 17"
     container
       heading
         text "Research note 18"
       paragraph
         text "Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart."
-      anchor [ref=153, loc=href:/lab#note-18, url=http://127.0.0.1:3000/lab#note-18]
+      anchor [ref=305, loc=href:/lab#note-18, url=http://127.0.0.1:3000/lab#note-18]
         text "Read note 18"
   container
     text "Local test fixture. Submissions remain on this machine and are discarded when the server closes."

@@ -37,7 +37,7 @@ Each completed entry has `{index,type,result}`. On failure the response has `ok:
 
 Compact snapshots default to 4,000 text characters and 40 controls. Full snapshots default to 24,000 characters and 100 controls. Hard bounds are 0 to 24,000 characters and 0 to 100 controls. `--full` increases the budget while keeping concise text output. `--max-chars` and `--max-controls` override budgets; use zero controls for reading-only tasks. Check `truncated` before assuming a snapshot covers everything needed.
 
-Refs such as `@e4` remain tied to the same element and document and are not reused for a different target. Navigation or replacing that element makes them stale. CSS selectors must match exactly one visible element. Fill does not accept file inputs, checkboxes, or radio buttons; use click for the latter two. Field values are limited to 16,384 characters and selectors to 2,048 characters.
+Refs such as `@e4` remain tied to the same element and document and are not reused for a different target. Navigation or replacing that element makes them stale. CSS selectors must match exactly one visible element. Fill accepts text and date/number input types, textareas, single selects, and contenteditable text. It rejects file, range, color, checkbox, and radio inputs; use click for checkboxes and radios. A select value must match exactly one enabled option outside a disabled option group. Use option values shown in snapshots. Multiple selects and values Chromium would silently normalize are rejected. Snapshots omit input, textarea, and editable drafts, but ordinary page text can echo their values. Select options are bounded to 20 per control and 100 per snapshot; oversized values are omitted and `truncated` is set. Field values are limited to 16,384 characters and selectors to 2,048 characters.
 
 Supported keys: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Home`, `End`, `PageUp`, `PageDown`, `Space`. Modifier combinations are unsupported. Scroll pixels default to 600 and range from 1 to 2,000. Wait timeouts default to 5,000 ms and range from 0 to 15,000 ms. With both selector and text, the text must occur inside the selected element. Use observable waits instead of arbitrary sleep delays.
 
@@ -45,8 +45,8 @@ Single-action equivalents include `click TAB_ID @e4`, `press TAB_ID Enter @e4`, 
 
 ## Verification and scope
 
-After a submission, check a confirmation element, changed page state, or another outcome tied to the user's task. Do not treat the absence of an error as confirmation. If a request times out, its side effects may still have happened. Inspect before retrying any consequential action.
+After a submission, check a confirmation element, changed page state, or another outcome tied to the user's task. For a form that opens a new tab, list `tabs SPACE_ID` and inspect the new tab for its receipt. Do not treat the absence of an error as confirmation. If a request times out, its side effects may still have happened. Inspect before retrying any consequential action.
 
 `handoff SPACE_ID` pauses all API page access for that space. A human takeover interrupts subsequent batch actions. Already dispatched clicks or submissions cannot be undone by the API. `409 human_control` means stop and wait for the user to explicitly resume. Do not try to bypass it.
 
-Snapshots do not enter iframe documents, shadow roots, PDF internals, or canvas interfaces. Screenshot files contain only the current viewport. There is no arbitrary script evaluation, file upload, or personal-session access command.
+Snapshots do not enter iframe documents, shadow roots, PDF internals, or canvas interfaces. Screenshot files contain only the current viewport. There is no arbitrary script evaluation, file upload, JavaScript dialog action, or personal-session access command. An alert, confirm, or prompt may block a page action; use human handoff to resolve it.

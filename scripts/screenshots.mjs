@@ -1,3 +1,4 @@
+import { waitForState } from "./wait.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,13 +31,14 @@ try {
       url,
     );
   }
-  await page
-    .waitForFunction(
-      async () =>
-        (await window.grove.getState()).tabs.every((tab) => !tab.loading),
-      { timeout: 20000 },
-    )
-    .catch(() => {});
+  await waitForState(
+    page,
+    (state) => state.tabs.every((tab) => !tab.loading),
+    undefined,
+    {
+      timeoutMs: 20000,
+    },
+  );
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(400);
   await mkdir("docs/images", { recursive: true });

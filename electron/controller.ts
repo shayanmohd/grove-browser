@@ -225,15 +225,38 @@ export class BrowserController {
     const granted = new Set<string>();
     const permissionKey = (origin: string, permission: string) =>
       `${origin}|${permission}`;
+    const isCurrentSession = () =>
+      !this.destroyed &&
+      this.sessions.get(space.id) === browsingSession &&
+      this.state.spaces.includes(space);
     browsingSession.setPermissionCheckHandler(
-      (_contents, permission, origin) =>
-        space.kind !== "agent" &&
-        granted.has(permissionKey(origin, permission)),
+      (_contents, permission, origin, details) => {
+        if (space.kind === "agent" || !isCurrentSession()) return false;
+        if (
+          permission === "media" &&
+          details.mediaType !== "audio" &&
+          details.mediaType !== "video"
+        )
+          return false;
+        try {
+          return granted.has(
+            permissionKey(
+              new URL(origin).origin,
+              permission === "media"
+                ? `media:${details.mediaType}`
+                : permission,
+            ),
+          );
+        } catch {
+          return false;
+        }
+      },
     );
     browsingSession.setPermissionRequestHandler(
       (contents, permission, callback, details) => {
         if (
           space.kind === "agent" ||
+          !isCurrentSession() ||
           !contents ||
           contents.isDestroyed() ||
           this.window.isDestroyed()
@@ -258,20 +281,62 @@ export class BrowserController {
         }
         let origin: string;
         try {
-          origin = new URL(details.requestingUrl || contents.getURL()).origin;
+          const requestingUrl =
+            permission === "media" &&
+            "securityOrigin" in details &&
+            details.securityOrigin
+              ? details.securityOrigin
+              : details.requestingUrl || contents.getURL();
+          if (!isWebUrl(requestingUrl))
+            throw new Error("Invalid permission origin.");
+          origin = new URL(requestingUrl).origin;
         } catch {
           callback(false);
           return;
         }
-        if (granted.has(permissionKey(origin, permission))) {
+        const mediaTypes =
+          permission === "media" && "mediaTypes" in details
+            ? [...new Set(details.mediaTypes ?? [])]
+            : [];
+        if (
+          permission === "media" &&
+          (!mediaTypes.length ||
+            mediaTypes.some((type) => type !== "audio" && type !== "video"))
+        ) {
+          callback(false);
+          return;
+        }
+        const requestedPermissions =
+          permission === "media"
+            ? mediaTypes.map((type) => `media:${type}`)
+            : [permission];
+        if (
+          requestedPermissions.every((item) =>
+            granted.has(permissionKey(origin, item)),
+          )
+        ) {
           callback(true);
           return;
         }
+        const requestedPageUrl = contents.getURL();
+        let navigated = false;
+        const onNavigation = (
+          event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
+        ) => {
+          if (event.isMainFrame && !event.isSameDocument) navigated = true;
+        };
+        contents.on("did-start-navigation", onNavigation);
+        const label =
+          permission === "media"
+            ? mediaTypes
+                .map((type) => (type === "audio" ? "microphone" : "camera"))
+                .join(" and ")
+            : permission;
         void dialog
           .showMessageBox(this.window, {
             type: "question",
             title: "Website permission",
-            message: `${origin} wants to use ${permission}.`,
+            message: `${origin} wants to use ${label}.`,
             detail: `This permission applies to the ${space.name} space for this browser session.`,
             buttons: ["Block", "Allow"],
             defaultId: 0,
@@ -279,10 +344,22 @@ export class BrowserController {
             noLink: true,
           })
           .then(({ response }) => {
-            if (response === 1) granted.add(permissionKey(origin, permission));
-            callback(response === 1);
+            const allow =
+              response === 1 &&
+              !navigated &&
+              isCurrentSession() &&
+              !contents.isDestroyed() &&
+              !this.window.isDestroyed() &&
+              contents.getURL() === requestedPageUrl;
+            if (allow)
+              for (const item of requestedPermissions)
+                granted.add(permissionKey(origin, item));
+            callback(allow);
           })
-          .catch(() => callback(false));
+          .catch(() => callback(false))
+          .finally(() =>
+            contents.removeListener("did-start-navigation", onNavigation),
+          );
       },
     );
     const onDownload = (event: Electron.Event, item: Electron.DownloadItem) => {
@@ -346,7 +423,10 @@ export class BrowserController {
     return this.ensureView(tab).webContents;
   }
 
-  private ensureView(tab: Tab): WebContentsView {
+  private ensureView(
+    tab: Tab,
+    loadOptions?: Electron.LoadURLOptions,
+  ): WebContentsView {
     const existing = this.views.get(tab.id);
     if (existing) return existing;
     const space = this.getSpace(tab.spaceId);
@@ -359,6 +439,7 @@ export class BrowserController {
         webSecurity: true,
         allowRunningInsecureContent: false,
         navigateOnDragDrop: false,
+        focusOnNavigation: false,
         spellcheck: true,
       },
     });
@@ -373,7 +454,7 @@ export class BrowserController {
       this.views.get(tab.id) === view &&
       this.state.tabs.includes(tab);
     this.bindShortcuts(contents);
-    contents.on("focus", () => {
+    const activateFocusedPane = () => {
       if (
         !isCurrentView() ||
         this.bounds.hidden ||
@@ -383,15 +464,35 @@ export class BrowserController {
         return;
       this.activate(tab);
       this.emit();
+    };
+    contents.on("focus", activateFocusedPane);
+    contents.on("before-mouse-event", (_event, input) => {
+      // A background page may already own Chromium focus when it becomes a
+      // split pane. A physical click must still update the browser controls.
+      if (input.type === "mouseDown" && space.owner === "human")
+        activateFocusedPane();
     });
-    contents.setWindowOpenHandler(({ url }) => {
-      if (isCurrentView() && isWebUrl(url))
-        void this.dispatch({
-          type: "tab:create",
-          url,
-          spaceId: tab.spaceId,
-          background: space.kind === "agent",
-        }).catch(() => undefined);
+    contents.setWindowOpenHandler(({ url, referrer, postBody }) => {
+      if (isCurrentView() && isWebUrl(url) && this.state.tabs.length < 200) {
+        const options: Electron.LoadURLOptions = { httpReferrer: referrer };
+        if (postBody) {
+          if (
+            ![
+              "application/x-www-form-urlencoded",
+              "multipart/form-data",
+            ].includes(postBody.contentType) ||
+            /[\r\n]/.test(postBody.boundary || "")
+          )
+            return { action: "deny" };
+          options.postData = postBody.data;
+          options.extraHeaders = `Content-Type: ${postBody.contentType}${postBody.boundary ? `; boundary=${postBody.boundary}` : ""}`;
+        }
+        const opened = newTab(space.id, url);
+        this.state.tabs.push(opened);
+        if (space.kind !== "agent") this.activate(opened);
+        this.ensureView(opened, options);
+        this.emit();
+      }
       return { action: "deny" };
     });
     contents.on("will-navigate", (event, url) => {
@@ -536,18 +637,24 @@ export class BrowserController {
         })
         .catch(() => undefined);
     });
-    this.load(tab, contents);
+    this.load(tab, contents, loadOptions);
     return view;
   }
 
-  private load(tab: Tab, contents: WebContents): void {
+  private load(
+    tab: Tab,
+    contents: WebContents,
+    options?: Electron.LoadURLOptions,
+  ): void {
     if (!isWebUrl(tab.url)) return;
     const request = Symbol();
     const requestedUrl = tab.url;
     this.pendingLoads.set(tab.id, request);
     tab.loading = true;
     delete tab.error;
-    void contents.loadURL(tab.url).catch((error) => {
+    void (
+      options ? contents.loadURL(tab.url, options) : contents.loadURL(tab.url)
+    ).catch((error) => {
       if (
         contents.isDestroyed() ||
         this.views.get(tab.id)?.webContents !== contents ||
@@ -603,8 +710,11 @@ export class BrowserController {
   }
 
   createAgentSpace(name: string, color: SpaceColor = "purple"): Space {
+    if (this.destroyed) throw new Error("Browser is closing.");
     if (this.state.spaces.length >= 30)
       throw new Error("The maximum of 30 spaces has been reached.");
+    if (this.state.tabs.length >= 200)
+      throw new Error("The maximum of 200 tabs has been reached.");
     const space: Space = {
       id: randomUUID(),
       name: cleanText(name, 48) || "Agent space",
@@ -677,6 +787,9 @@ export class BrowserController {
         this.closedTabs.unshift({ ...tab });
         this.closedTabs = this.closedTabs.slice(0, 20);
         const index = this.state.tabs.indexOf(tab);
+        const spaceIndex = this.state.tabs
+          .filter((item) => item.spaceId === tab.spaceId)
+          .indexOf(tab);
         this.state.tabs.splice(index, 1);
         this.destroyTab(tab.id);
         if (this.state.splitTabId === tab.id) this.state.splitTabId = null;
@@ -691,13 +804,15 @@ export class BrowserController {
         if (this.state.activeTabId === tab.id) {
           const next =
             candidates.find((item) => item.id === this.state.splitTabId) ??
-            candidates[Math.min(candidates.length - 1, index)];
+            candidates[Math.min(candidates.length - 1, spaceIndex)];
           this.state.splitTabId = null;
           this.activate(next);
         }
         break;
       }
       case "tab:reopen": {
+        if (this.closedTabs.length && this.state.tabs.length >= 200)
+          throw new Error("The maximum of 200 tabs has been reached.");
         const old = this.closedTabs.shift();
         if (
           old &&
@@ -778,6 +893,8 @@ export class BrowserController {
           throw new Error("Invalid space options.");
         if (this.state.spaces.length >= 30)
           throw new Error("The maximum of 30 spaces has been reached.");
+        if (this.state.tabs.length >= 200)
+          throw new Error("The maximum of 200 tabs has been reached.");
         const name = cleanText(action.name, 48) || "Untitled space";
         let space: Space;
         if (action.kind === "agent") {

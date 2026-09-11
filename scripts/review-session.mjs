@@ -1,3 +1,4 @@
+import { waitForState } from "./wait.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -39,9 +40,7 @@ try {
       settings: { automationEnabled: true },
     }),
   );
-  await chrome.waitForFunction(
-    async () => (await window.grove.getState()).automation.running,
-  );
+  await waitForState(chrome, (state) => state.automation.running);
   const connection = await chrome.evaluate(() =>
     window.grove.getAgentConnection(),
   );

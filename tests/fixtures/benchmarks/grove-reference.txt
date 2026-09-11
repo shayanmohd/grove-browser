@@ -7,125 +7,87 @@ Create a form
 Interaction lab
 Reference page
 Browser research reference
-
 A shared document for comparing observation output. All research notes and links belong to this local fixture.
-
 Search research
 Search
 Research note 1
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 1
 Research note 2
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 2
 Research note 3
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 3
 Research note 4
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 4
 Research note 5
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 5
 Research note 6
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 6
 Research note 7
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 7
 Research note 8
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 8
 Research note 9
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 9
 Research note 10
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 10
 Research note 11
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 11
 Research note 12
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 12
 Research note 13
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 13
 Research note 14
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 14
 Research note 15
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 15
 Research note 16
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 16
 Research note 17
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 17
 Research note 18
-
 Reliable browser automation observes the page, identifies the intended control, performs an authorized action, and checks the visible result. Separate sessions keep unrelated projects apart.
-
 Read note 18
 Local test fixture. Submissions remain on this machine and are discarded when the server closes.
 
 Controls:
-@e1301 a "Overview"
-@e1302 a "Create a form"
-@e1303 a "Interaction lab"
-@e1304 a "Reference page"
-@e1305 input "Search research"
-@e1306 button "Search"
-@e1307 a "Read note 1"
-@e1308 a "Read note 2"
-@e1309 a "Read note 3"
-@e1310 a "Read note 4"
-@e1311 a "Read note 5"
-@e1312 a "Read note 6"
-@e1313 a "Read note 7"
-@e1314 a "Read note 8"
-@e1315 a "Read note 9"
-@e1316 a "Read note 10"
-@e1317 a "Read note 11"
-@e1318 a "Read note 12"
-@e1319 a "Read note 13"
-@e1320 a "Read note 14"
-@e1321 a "Read note 15"
-@e1322 a "Read note 16"
-@e1323 a "Read note 17"
-@e1324 a "Read note 18"
+@e1401 a "Overview"
+@e1402 a "Create a form"
+@e1403 a "Interaction lab"
+@e1404 a "Reference page"
+@e1405 input "Search research"
+@e1406 button "Search"
+@e1407 a "Read note 1"
+@e1408 a "Read note 2"
+@e1409 a "Read note 3"
+@e1410 a "Read note 4"
+@e1411 a "Read note 5"
+@e1412 a "Read note 6"
+@e1413 a "Read note 7"
+@e1414 a "Read note 8"
+@e1415 a "Read note 9"
+@e1416 a "Read note 10"
+@e1417 a "Read note 11"
+@e1418 a "Read note 12"
+@e1419 a "Read note 13"
+@e1420 a "Read note 14"
+@e1421 a "Read note 15"
+@e1422 a "Read note 16"
+@e1423 a "Read note 17"
+@e1424 a "Read note 18"

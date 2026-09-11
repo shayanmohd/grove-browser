@@ -17,6 +17,40 @@ afterEach(() => {
 });
 
 describe("desktop session persistence", () => {
+  it("rejects duplicate space and tab identifiers across restored spaces", () => {
+    const path = statePath();
+    const original = initialState();
+    original.spaces.push({ ...original.spaces[0], name: "Duplicate" });
+    original.tabs[0].url = "https://personal.example/";
+    original.tabs[1].id = original.tabs[0].id;
+    original.tabs[1].url = "https://work.example/";
+    writeFileSync(path, JSON.stringify(original));
+    const restored = readState(path, "linux", "0.1.0");
+    expect(restored.spaces).toHaveLength(2);
+    expect(new Set(restored.tabs.map((tab) => tab.id)).size).toBe(
+      restored.tabs.length,
+    );
+    expect(restored.tabs.find((tab) => tab.spaceId === "work")?.url).toBe(
+      "grove://newtab",
+    );
+  });
+
+  it("keeps one tab per space without exceeding the restoration limit", () => {
+    const path = statePath();
+    const original = initialState();
+    original.tabs = Array.from({ length: 200 }, () =>
+      newTab("personal", "https://example.com/"),
+    );
+    writeFileSync(path, JSON.stringify(original));
+    const restored = readState(path, "linux", "0.1.0");
+    expect(restored.tabs).toHaveLength(200);
+    expect(
+      restored.spaces.every((space) =>
+        restored.tabs.some((tab) => tab.spaceId === space.id),
+      ),
+    ).toBe(true);
+  });
+
   it("restores personal tabs, bookmarks, settings and history with runtime fields reset", () => {
     const path = statePath();
     const original = initialState("darwin");

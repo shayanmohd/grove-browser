@@ -349,10 +349,7 @@ export async function startAutomation(
     {
       epoch: number;
       listener: (
-        event: Electron.Event,
-        url: string,
-        inPlace: boolean,
-        mainFrame: boolean,
+        event: Electron.Event<Electron.WebContentsDidStartNavigationEventParams>,
       ) => void;
       destroyed: () => void;
     }
@@ -362,8 +359,8 @@ export async function startAutomation(
     if (!tracked) {
       tracked = {
         epoch: 0,
-        listener: (_event, _url, inPlace, mainFrame) => {
-          if (mainFrame && !inPlace) tracked!.epoch++;
+        listener: (details) => {
+          if (details.isMainFrame && !details.isSameDocument) tracked!.epoch++;
         },
         destroyed: () => trackedContents.delete(contents),
       };
@@ -394,7 +391,11 @@ export async function startAutomation(
     authorizeSpace(tab.spaceId);
     return tab;
   };
-  const readyContents = async (id: string, timeout = 15000) => {
+  const readyContents = async (
+    id: string,
+    timeout = 15000,
+    allowLoading = false,
+  ) => {
     authorizeTab(id);
     const contents = controller.getWebContents(id);
     if (!contents || contents.isDestroyed())
@@ -404,7 +405,7 @@ export async function startAutomation(
         "Navigate this tab to an HTTP or HTTPS page first.",
       );
     trackContents(contents);
-    if (contents.isLoadingMainFrame()) {
+    if (!allowLoading && contents.isLoadingMainFrame()) {
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => {
           clearTimeout(timer);
@@ -457,7 +458,8 @@ export async function startAutomation(
     deadline: number,
   ) => {
     authorizeTab(id);
-    const namespace = `${referenceSession}:${id}:${trackContents(contents).epoch}`;
+    const epoch = trackContents(contents).epoch;
+    const namespace = `${referenceSession}:${id}:${epoch}`;
     const result = (await bounded(
       contents.executeJavaScriptInIsolatedWorld(WORLD_ID, [
         {
@@ -467,6 +469,15 @@ export async function startAutomation(
       remaining(deadline),
     )) as Record<string, unknown>;
     authorizeTab(id);
+    if (
+      ["snapshot", "target", "focus"].includes(operation) &&
+      trackContents(contents).epoch !== epoch
+    )
+      return fail(
+        409,
+        "page_changed",
+        "The page navigated during this operation. Inspect the new page before continuing.",
+      );
     if (result?.ok === false)
       return fail(
         422,
@@ -485,6 +496,7 @@ export async function startAutomation(
       parameters: Record<string, unknown>;
     }[],
     deadline: number,
+    epoch: number,
   ) => {
     authorizeTab(id);
     if (contents.debugger.isAttached())
@@ -497,6 +509,17 @@ export async function startAutomation(
     try {
       for (const command of commands) {
         authorizeTab(id);
+        if (
+          !["mouseReleased", "keyUp"].includes(
+            command.parameters.type as string,
+          ) &&
+          trackContents(contents).epoch !== epoch
+        )
+          return fail(
+            409,
+            "page_changed",
+            "The page navigated before input completed. Inspect the new page before continuing.",
+          );
         await bounded(
           contents.debugger.sendCommand(command.method, command.parameters),
           remaining(deadline),
@@ -514,7 +537,16 @@ export async function startAutomation(
     deadline = Date.now() + 30000,
   ): Promise<Record<string, unknown>> => {
     const tab = authorizeTab(id);
-    const contents = await readyContents(id, remaining(deadline));
+    const waitDeadline =
+      action.type === "wait"
+        ? Math.min(deadline, Date.now() + (action.payload.timeoutMs as number))
+        : deadline;
+    const contents = await readyContents(
+      id,
+      remaining(deadline),
+      action.type === "wait",
+    );
+    const epoch = trackContents(contents).epoch;
     const payload = action.payload;
     let result: Record<string, unknown>;
     if (action.type === "snapshot") {
@@ -579,6 +611,7 @@ export async function startAutomation(
           },
         ],
         deadline,
+        epoch,
       );
       // Let synchronous submit/navigation handlers start, then wait for their load.
       // No input operation is retried, including when navigation times out.
@@ -621,6 +654,7 @@ export async function startAutomation(
           },
         ],
         deadline,
+        epoch,
       );
       await new Promise((resolve) => setTimeout(resolve, 100));
       await readyContents(id, remaining(deadline));
@@ -628,19 +662,33 @@ export async function startAutomation(
     } else if (action.type === "scroll") {
       result = await evaluatePage(id, contents, "scroll", payload, deadline);
     } else {
-      const waitDeadline = Math.min(
-        deadline,
-        Date.now() + (payload.timeoutMs as number),
-      );
       for (;;) {
         authorizeTab(id);
-        const observation = await evaluatePage(
-          id,
-          contents,
-          "check",
-          payload,
-          deadline,
-        );
+        let observation: Record<string, unknown>;
+        try {
+          observation = await evaluatePage(
+            id,
+            contents,
+            "check",
+            payload,
+            // Zero makes one attempt with a short IPC response allowance.
+            payload.timeoutMs === 0
+              ? Math.min(deadline, Date.now() + 250)
+              : Math.min(deadline, Math.max(Date.now() + 1, waitDeadline)),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ApiError) ||
+            !["page_timeout", "action_timeout"].includes(error.code) ||
+            Date.now() < waitDeadline
+          )
+            throw error;
+          return fail(
+            408,
+            "wait_timeout",
+            "The requested page condition was not observed before the timeout.",
+          );
+        }
         if (observation.matched) {
           result = { ok: true };
           break;
@@ -654,7 +702,7 @@ export async function startAutomation(
         await new Promise((resolve) =>
           setTimeout(resolve, Math.min(100, waitDeadline - Date.now())),
         );
-        await readyContents(id, remaining(deadline));
+        await readyContents(id, remaining(deadline), true);
       }
     }
     authorizeTab(id);
@@ -839,6 +887,7 @@ export async function startAutomation(
         const deadline = Date.now() + 60000;
         for (const [index, action] of actions.entries()) {
           try {
+            if (response.destroyed) return;
             authorizeTab(tab.id);
             results.push({
               index,
@@ -934,7 +983,10 @@ export async function startAutomation(
       try {
         const body =
           request.method === "POST" ? await readBody(request) : undefined;
-        const operation = queue.then(() => route(request, response, body));
+        const operation = queue.then(() => {
+          if (response.destroyed || response.writableEnded) return;
+          return route(request, response, body);
+        });
         queue = operation.catch(() => {});
         await operation;
       } finally {

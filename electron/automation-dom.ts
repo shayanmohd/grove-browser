@@ -57,13 +57,94 @@ export function pageOperation(
     )
       return false;
     const style = getComputedStyle(element);
+    for (
+      let ancestor: Element | null = element;
+      ancestor;
+      ancestor = ancestor.parentElement
+    ) {
+      if (
+        ancestor instanceof HTMLDetailsElement &&
+        !ancestor.open &&
+        ancestor !== element
+      ) {
+        const summary = Array.from(ancestor.children).find(
+          (child) => child.localName === "summary",
+        );
+        if (!summary?.contains(element)) return false;
+      }
+      const inherited = getComputedStyle(ancestor);
+      if (
+        inherited.opacity === "0" ||
+        inherited.display === "none" ||
+        inherited.contentVisibility === "hidden"
+      )
+        return false;
+    }
     return (
       style.display !== "none" &&
       style.visibility !== "hidden" &&
       style.visibility !== "collapse" &&
-      style.opacity !== "0" &&
       element.getClientRects().length > 0
     );
+  };
+  const pageText = (scope: Element, maximum = Infinity) => {
+    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+    let text = "",
+      previousBlock: Element | null = null;
+    let previousRect: DOMRect | undefined;
+    for (
+      let node = walker.nextNode();
+      node && text.length <= maximum;
+      node = walker.nextNode()
+    ) {
+      const parent = node.parentElement;
+      if (
+        !parent ||
+        parent.closest(
+          "script,style,noscript,template,input,textarea,select",
+        ) ||
+        (parent instanceof HTMLElement && parent.isContentEditable) ||
+        !visible(parent)
+      )
+        continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = Array.from(range.getClientRects()).filter(
+        (rect) => rect.width > 0 && rect.height > 0,
+      );
+      if (!rects.length) continue;
+      let block = parent;
+      while (
+        block.parentElement &&
+        ["inline", "inline-block", "contents"].includes(
+          getComputedStyle(block).display,
+        )
+      )
+        block = block.parentElement;
+      const value = /^(pre|break-spaces)/.test(
+        getComputedStyle(parent).whiteSpace,
+      )
+        ? node.textContent || ""
+        : (node.textContent || "").replace(/\s+/g, " ");
+      if (
+        text &&
+        (previousBlock !== block ||
+          (previousRect && rects[0].top >= previousRect.bottom - 1))
+      )
+        text += "\n";
+      else if (
+        text &&
+        previousRect &&
+        rects[0].left > previousRect.right + 1 &&
+        !/\s$/.test(text) &&
+        !/^\s/.test(value)
+      )
+        text += " ";
+      text += value.slice(0, Math.max(0, maximum + 1 - text.length));
+      previousBlock = block;
+      previousRect = rects.at(-1);
+    }
+    return text;
   };
   const unique = (selector: string) => {
     try {
@@ -102,6 +183,7 @@ export function pageOperation(
   const selectorFor = (element: Element) => {
     if (
       element.id &&
+      element.id.length <= 512 &&
       document.querySelectorAll(`#${CSS.escape(element.id)}`).length === 1
     )
       return `#${CSS.escape(element.id)}`;
@@ -137,11 +219,13 @@ export function pageOperation(
     while (registry.elements.size > 5000)
       registry.elements.delete(registry.elements.keys().next().value!);
     const query =
-      'a[href],button,input:not([type="hidden"]),textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"],[contenteditable="true"]';
+      'a[href],button,summary,input:not([type="hidden"]),textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"],[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]';
     const candidates = (scope.matches(query) ? [scope] : [])
       .concat(Array.from(scope.querySelectorAll(query)))
       .filter(visible);
     let nextRef = options.firstRef;
+    let remainingOptions = 100;
+    let optionsTruncated = false;
     const interactables = candidates
       .slice(0, options.maxControls)
       .map((element, index) => {
@@ -166,7 +250,20 @@ export function pageOperation(
           labelledBy.trim() ||
           labels ||
           element.getAttribute("placeholder") ||
-          element.textContent ||
+          (element instanceof HTMLInputElement &&
+          ["submit", "reset", "button"].includes(element.type)
+            ? element.value ||
+              (element.type === "submit"
+                ? "Submit"
+                : element.type === "reset"
+                  ? "Reset"
+                  : "")
+            : element instanceof HTMLInputElement && element.type === "image"
+              ? element.alt
+              : element instanceof HTMLTextAreaElement ||
+                  (element instanceof HTMLElement && element.isContentEditable)
+                ? ""
+                : element.textContent) ||
           ""
         )
           .replace(/\s+/g, " ")
@@ -182,12 +279,36 @@ export function pageOperation(
           disabled:
             element.matches(":disabled") ||
             element.getAttribute("aria-disabled") === "true",
+          ...(element instanceof HTMLSelectElement
+            ? (() => {
+                const choices = Array.from(element.options).filter(
+                  (option) => option.value.length <= 256,
+                );
+                const included = choices.slice(
+                  0,
+                  Math.min(20, remainingOptions),
+                );
+                remainingOptions -= included.length;
+                const truncated = included.length < element.options.length;
+                optionsTruncated ||= truncated;
+                return {
+                  options: included.map((option) => ({
+                    value: option.value,
+                    label: option.label
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 80),
+                    disabled:
+                      option.disabled || !!option.closest("optgroup")?.disabled,
+                  })),
+                  ...(truncated ? { optionsTruncated: true } : {}),
+                };
+              })()
+            : {}),
         };
         return entry;
       });
-    let text = visible(scope)
-      ? (scope as HTMLElement).innerText || scope.textContent || ""
-      : "";
+    let text = pageText(scope, options.maxChars);
     if (options.mode === "compact")
       text = text
         .replace(/[\t ]+/g, " ")
@@ -200,7 +321,8 @@ export function pageOperation(
       interactables,
       truncated:
         text.length > options.maxChars ||
-        candidates.length > options.maxControls,
+        candidates.length > options.maxControls ||
+        optionsTruncated,
     };
   }
   if (operation === "check") {
@@ -216,10 +338,14 @@ export function pageOperation(
         return { ok: true, matched: false };
       scope = matches[0];
     }
-    const text = (scope as HTMLElement).innerText || "";
+    const text = pageText(scope);
     return {
       ok: true,
-      matched: typeof payload.text !== "string" || text.includes(payload.text),
+      matched:
+        typeof payload.text === "string"
+          ? text.includes(payload.text)
+          : typeof payload.selector === "string" ||
+            document.readyState !== "loading",
     };
   }
   if (operation === "scroll") {
@@ -278,27 +404,52 @@ export function pageOperation(
     element instanceof HTMLTextAreaElement ||
     element instanceof HTMLSelectElement
   ) {
-    if (
-      element instanceof HTMLInputElement &&
-      [
-        "file",
-        "checkbox",
-        "radio",
-        "button",
-        "submit",
-        "reset",
-        "image",
-        "hidden",
-      ].includes(element.type)
-    )
-      return failure("This input type does not support fill.");
-    if (
-      element instanceof HTMLSelectElement &&
-      !Array.from(element.options).some(
-        (option) => option.value === value && !option.disabled,
-      )
-    )
-      return failure("No enabled option has the requested value.");
+    const validateValue = () => {
+      if (element instanceof HTMLInputElement) {
+        if (
+          ![
+            "text",
+            "search",
+            "tel",
+            "url",
+            "email",
+            "password",
+            "number",
+            "date",
+            "time",
+            "datetime-local",
+            "month",
+            "week",
+          ].includes(element.type)
+        )
+          return failure("This input type does not support fill.");
+        // Validate Chromium's normalization before touching the actual field.
+        const probe = document.createElement("input");
+        probe.type = element.type;
+        probe.value = value;
+        if (probe.value !== value)
+          return failure(
+            "The value is not valid for this input type.",
+            "invalid_value",
+          );
+      }
+      if (element instanceof HTMLSelectElement) {
+        if (element.multiple)
+          return failure("Multiple selects do not support fill.");
+        const matches = Array.from(element.options).filter(
+          (option) => option.value === value,
+        );
+        if (matches.length !== 1)
+          return failure(
+            "The value must match exactly one option.",
+            "invalid_value",
+          );
+        if (matches[0].disabled || matches[0].closest("optgroup")?.disabled)
+          return failure("The requested option is disabled.", "invalid_value");
+      }
+    };
+    const invalidValue = validateValue();
+    if (invalidValue) return invalidValue;
     const prototype =
       element instanceof HTMLInputElement
         ? HTMLInputElement.prototype
@@ -306,12 +457,27 @@ export function pageOperation(
           ? HTMLTextAreaElement.prototype
           : HTMLSelectElement.prototype;
     element.focus({ preventScroll: true });
+    if (
+      !visible(element) ||
+      element.matches(":disabled") ||
+      element.getAttribute("aria-disabled") === "true" ||
+      element.hasAttribute("readonly")
+    )
+      return failure(
+        "The field changed while it was being focused. Inspect it again.",
+      );
+    const changedValue = validateValue();
+    if (changedValue) return changedValue;
     Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(
       element,
       value,
     );
   } else if (element.isContentEditable) {
     element.focus({ preventScroll: true });
+    if (!visible(element) || !element.isContentEditable)
+      return failure(
+        "The field changed while it was being focused. Inspect it again.",
+      );
     element.textContent = value;
   } else return failure("Element is not an editable field.");
   element.dispatchEvent(new Event("input", { bubbles: true }));

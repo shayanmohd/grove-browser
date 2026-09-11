@@ -8,7 +8,7 @@ Remote pages run in native `WebContentsView` instances with Node.js integration 
 
 The address bar accepts HTTP and HTTPS pages, search text, and the internal new tab destination. Unsupported schemes and credential bearing URLs are rejected. Loopback HTTP addresses remain available for local development. These controls do not classify the trustworthiness of a website.
 
-Native IPC checks the sending renderer and its main frame. Website popups open as browser tabs. Personal spaces ask for site permissions through a native prompt. Agent spaces deny permission requests and downloads.
+Native IPC checks the sending renderer and its main frame. Website popups open as browser tabs. Personal spaces ask for site permissions through a native prompt. Microphone and camera grants are separate, tied to the requesting origin and session. Pending permission responses are rejected after their space is deleted or the page changes. Agent spaces deny permission requests and downloads.
 
 ## Spaces and local data
 
@@ -24,7 +24,7 @@ The automation API is disabled by default and is started through the browser set
 
 The API can access spaces it created and agent spaces the user explicitly grants to that running connection. Page reads and actions require agent ownership. The UI exposes activity and lets the user take control, after which subsequent agent operations in that space are denied until the user resumes the agent in the interface.
 
-The API supports bounded DOM snapshots, navigation, trusted clicks and keys, field filling, scrolling, conditional waits, sequential batches, and viewport screenshots. It does not expose arbitrary JavaScript evaluation, Node.js, or a general filesystem interface. Its DOM operations cover the main document; iframe and shadow DOM automation are not implemented. Batches check ownership between steps and report completed actions when a later action fails.
+The API supports bounded DOM snapshots, navigation, trusted clicks and keys, field filling, scrolling, conditional waits, sequential batches, and viewport screenshots. It does not expose arbitrary JavaScript evaluation, Node.js, or a general filesystem interface. Its DOM operations cover the main document; iframe and shadow DOM automation are not implemented. Batches check ownership between steps and report completed actions when a later action fails. Navigation invalidates refs and cancels prepared snapshot, focus, or click results that belong to the previous document. Snapshots omit draft field values, but website text can echo them, so this is not comprehensive redaction.
 
 Treat the connection token as a local secret. Anyone who can use a valid token can exercise the API's allowed capabilities. Do not paste it into source control, screenshots, public issues, website forms, or remote service logs. Loopback binding is not a defense against an already compromised local account.
 

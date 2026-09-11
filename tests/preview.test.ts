@@ -31,6 +31,74 @@ async function split(bridge: GroveBridge) {
   return { firstId, secondId };
 }
 describe("interactive preview state invariants", () => {
+  it("recovers from corrupt storage without trusting saved runtime state", async () => {
+    const saved = await create().getState();
+    storage.set(
+      "grove-preview-v1",
+      JSON.stringify({
+        ...saved,
+        bookmarks: {},
+        history: null,
+        activity: [null],
+        settings: {
+          theme: "broken",
+          searchEngine: "broken",
+          automationEnabled: true,
+        },
+        automation: { running: true, port: 9999 },
+        platform: "win32",
+        version: "untrusted",
+        tabs: [
+          null,
+          {
+            id: "bad",
+            spaceId: saved.spaces[0].id,
+            url: "javascript:alert(1)",
+          },
+        ],
+      }),
+    );
+    const bridge = create();
+    const restored = await bridge.getState();
+    expect(restored.platform).toBe("web");
+    expect(restored.settings.theme).not.toBe("broken");
+    expect(restored.settings.automationEnabled).toBe(false);
+    expect(restored.automation.running).toBe(false);
+    expect(restored.activity).toEqual([]);
+    expect(Array.isArray(restored.bookmarks)).toBe(true);
+    expect(Array.isArray(restored.history)).toBe(true);
+    expect(restored.tabs.every((tab) => tab.url === "grove://newtab")).toBe(
+      true,
+    );
+    await expect(
+      bridge.dispatch({ type: "tab:create", url: "hello world" }),
+    ).resolves.toBeDefined();
+    storage.set("grove-preview-v1", "{broken");
+    expect((await create().getState()).tabs.length).toBeGreaterThan(0);
+  });
+  it("removes duplicate saved identities and unsafe bookmark URLs", async () => {
+    const saved = await create().getState();
+    storage.set(
+      "grove-preview-v1",
+      JSON.stringify({
+        ...saved,
+        spaces: [...saved.spaces, saved.spaces[0]],
+        tabs: [
+          ...saved.tabs,
+          { ...saved.tabs[0], spaceId: saved.spaces[1].id },
+        ],
+        bookmarks: [{ id: "unsafe", title: "Bad", url: "file:///etc/passwd" }],
+      }),
+    );
+    const restored = await create().getState();
+    expect(new Set(restored.spaces.map((space) => space.id)).size).toBe(
+      restored.spaces.length,
+    );
+    expect(new Set(restored.tabs.map((tab) => tab.id)).size).toBe(
+      restored.tabs.length,
+    );
+    expect(restored.bookmarks).toEqual([]);
+  });
   it("does not expose a previous workspace split after a command palette tab switch", async () => {
     const bridge = create();
     await split(bridge);

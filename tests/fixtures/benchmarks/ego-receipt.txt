@@ -2,13 +2,13 @@ root
   container
     text "Grove form lab"
     container "Lab navigation"
-      anchor [ref=260, loc=href:/, url=http://127.0.0.1:3000/]
+      anchor [ref=111, loc=href:/, url=http://127.0.0.1:3000/]
         text "Overview"
-      anchor [ref=262, loc=unstable, url=http://127.0.0.1:3000/forms/new]
+      anchor [ref=113, loc=unstable, url=http://127.0.0.1:3000/forms/new]
         text "Create a form"
-      anchor [ref=264, loc=href:/lab, url=http://127.0.0.1:3000/lab]
+      anchor [ref=115, loc=href:/lab, url=http://127.0.0.1:3000/lab]
         text "Interaction lab"
-      anchor [ref=266, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
+      anchor [ref=117, loc=href:/benchmark, url=http://127.0.0.1:3000/benchmark]
         text "Reference page"
   container
     heading
@@ -40,7 +40,7 @@ root
         text "Project context"
       list_item
         text "Cross-platform portfolio review"
-    anchor [ref=298, loc=unstable, url=http://127.0.0.1:3000/forms/new]
+    anchor [ref=149, loc=unstable, url=http://127.0.0.1:3000/forms/new]
       text "Create another form"
   container
     text "Local test fixture. Submissions remain on this machine and are discarded when the server closes."
