@@ -2,6 +2,8 @@
 
 Grove uses the same source on macOS, Windows, and Linux. The GitHub desktop workflow builds a native package for each supported runner. A successful CI run verifies its runner environment; testing your own graphics, display scaling, and desktop integration still matters.
 
+For the easiest installation, open [Grove Releases](https://github.com/shayanmohd/grove-browser/releases), download the file matching your operating system and CPU, and follow the platform guidance below. Each published preview includes a standalone skill ZIP and `SHA256SUMS.txt`.
+
 ## Windows
 
 Install Git and Node.js 22.12 or newer. In PowerShell:

@@ -98,9 +98,11 @@ Run the matching command on its native operating system. Installers are written 
 | Windows  | `npm run package:win`   | NSIS installer and portable EXE              |
 | Linux    | `npm run package:linux` | AppImage and Debian package                  |
 
-The [desktop workflow](.github/workflows/build.yml) runs validation, real Electron smoke tests, skill-driven form tests, and packaging on Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64. It runs on pull requests, pushes to `main` or `master`, and manual dispatch. Download packages from a completed workflow's artifacts. The workflow does not publish releases. See [testing on your devices](docs/device-testing.md) for Windows and Linux steps.
+The [desktop workflow](.github/workflows/build.yml) runs validation, real Electron smoke tests, skill-driven form tests, and packaging on Apple Silicon macOS, Intel macOS, Windows x64, and Linux x64. It runs on pull requests, pushes to `main` or `master`, and manual dispatch. Download packages from [Releases](https://github.com/shayanmohd/grove-browser/releases) or a completed workflow's artifacts. Builds do not publish automatically. The separate [reviewed draft workflow](.github/workflows/release.yml) publishes only when manually dispatched against a successful native build. See [testing on your devices](docs/device-testing.md) for Windows and Linux steps.
 
 The project homepage is declared in `package.json` for desktop packaging. Forks can update it to their own repository. See [packaging notes](docs/architecture.md#native-packaging) for details.
+
+Maintainers can follow the [publishing guide](docs/releases.md) to release a reviewed build with verified installer checksums.
 
 Packages are unsigned development builds. macOS signing and notarization and Windows code signing are not configured. Automatic updates are not implemented.
 

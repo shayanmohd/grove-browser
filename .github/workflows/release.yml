@@ -1,0 +1,41 @@
+name: Publish reviewed draft
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Build desktop apps run ID for the draft release
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: grove-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+    steps:
+      - name: Check out publishing tools
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate completed native build
+        id: build
+        run: node scripts/publish-release.mjs validate
+      - name: Check out the reviewed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.build.outputs.sha }}
+          path: reviewed-source
+          persist-credentials: false
+      - name: Verify artifacts and publish the matching draft
+        run: node scripts/publish-release.mjs publish

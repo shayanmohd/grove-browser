@@ -9,3 +9,6 @@ release/
 !.env.example
 test-results/
 artifacts/
+release-stage/
+release-artifacts/
+reviewed-source/
