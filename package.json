@@ -1,6 +1,8 @@
 {
   "name": "grove-browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "productName": "Grove",
+  "desktopName": "dev.grove.browser.desktop",
   "description": "A focused, cross-platform browser with isolated spaces for people and agents.",
   "homepage": "https://github.com/shayanmohd/grove-browser",
   "author": "Grove contributors",
@@ -21,6 +23,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:desktop": "node scripts/smoke.mjs",
+    "test:branding": "node scripts/test-branding.mjs",
     "check": "npm run typecheck && npm test && node scripts/check-copy.mjs",
     "package": "npm run build && electron-builder --publish never",
     "package:mac": "npm run build && electron-builder --mac --publish never",

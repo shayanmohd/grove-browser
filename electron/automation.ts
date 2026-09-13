@@ -44,6 +44,8 @@ const fail = (status: number, code: string, message: string): never => {
   throw new ApiError(status, code, message);
 };
 const BODY_LIMIT = 65536;
+const UPLOAD_BODY_LIMIT = 24 * 1024 * 1024;
+const UPLOAD_FILE_LIMIT = 16 * 1024 * 1024;
 const WORLD_ID = 1001;
 // API restarts in the same app process must not recycle an old element ref.
 let nextElementReference = 1;
@@ -224,13 +226,15 @@ function send(response: ServerResponse, status: number, data: unknown) {
 
 async function readBody(
   request: IncomingMessage,
+  limit = BODY_LIMIT,
 ): Promise<Record<string, unknown>> {
   if (
     !/^application\/json(?:\s*;|$)/i.test(request.headers["content-type"] || "")
   )
     return fail(415, "content_type", "Use Content-Type: application/json.");
-  if (Number(request.headers["content-length"] || 0) > BODY_LIMIT)
-    return fail(413, "body_too_large", "Request body exceeds 64 KiB.");
+  const sizeError = `Request body exceeds ${limit / 1024} KiB.`;
+  if (Number(request.headers["content-length"] || 0) > limit)
+    return fail(413, "body_too_large", sizeError);
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -265,9 +269,9 @@ async function readBody(
     request.on("data", (chunk: Buffer) => {
       if (settled) return;
       size += chunk.length;
-      if (size > BODY_LIMIT)
+      if (size > limit)
         finish(
-          new ApiError(413, "body_too_large", "Request body exceeds 64 KiB."),
+          new ApiError(413, "body_too_large", sizeError),
         );
       else chunks.push(chunk);
     });
@@ -310,6 +314,36 @@ function urlField(body: Record<string, unknown>): string {
     );
   return new URL(value).href;
 }
+function uploadFields(body: Record<string, unknown>) {
+  const target = targetFields(body);
+  if (!target.ref)
+    return fail(400, "invalid_target", "Uploads require a current file input ref from a snapshot.");
+  if (!Array.isArray(body.files) || body.files.length < 1 || body.files.length > 8)
+    return fail(400, "invalid_files", "Provide between 1 and 8 files.");
+  let total = 0;
+  const files = body.files.map((entry: unknown) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry))
+      return fail(400, "invalid_files", "Each file needs a name, MIME type, and base64 content.");
+    const file = entry as Record<string, unknown>;
+    const name = stringField(file, "name", 255);
+    if (/[\\/\u0000-\u001f\u007f]/.test(name) || name === "." || name === "..")
+      return fail(400, "invalid_files", "File names must be basenames without control characters.");
+    const type = stringField(file, "type", 128, true);
+    if (type && !/^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/.test(type))
+      return fail(400, "invalid_files", "Use a valid MIME type or an empty string.");
+    const data = stringField(file, "data", Math.ceil(UPLOAD_FILE_LIMIT / 3) * 4, true);
+    if (data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data) || !/^[A-Za-z0-9+/]*={0,2}$/.test(data))
+      return fail(400, "invalid_files", "File content must be canonical base64.");
+    const decoded = Buffer.from(data, "base64");
+    if (decoded.toString("base64") !== data)
+      return fail(400, "invalid_files", "File content must be canonical base64.");
+    total += decoded.length;
+    if (total > UPLOAD_FILE_LIMIT)
+      return fail(413, "files_too_large", "Files must total at most 16 MiB per upload.");
+    return { name, type, data };
+  });
+  return { ...target, files };
+}
 async function bounded<T>(operation: Promise<T>, timeout = 15000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -342,6 +376,7 @@ export async function startAutomation(
   let port = 0;
   let stopped = false;
   let pending = 0;
+  let uploading = false;
   let queue: Promise<unknown> = Promise.resolve();
   const referenceSession = randomBytes(12).toString("hex");
   const trackedContents = new Map<
@@ -980,16 +1015,47 @@ export async function startAutomation(
       if (pending >= 16)
         return fail(429, "busy", "Too many pending requests. Try again later.");
       pending++;
+      let ownsUpload = false;
       try {
+        // Only this fixed route accepts a larger body. Reserve one transfer
+        // before reading bytes, so concurrent uploads cannot multiply memory.
+        const upload = request.method === "POST"
+          ? /^\/tabs\/([a-zA-Z0-9_-]{1,128})\/upload$/.exec(request.url || "")
+          : null;
+        let uploadContents: WebContents | undefined;
+        let uploadEpoch: number | undefined;
+        if (upload) {
+          authorizeTab(upload[1]);
+          if (uploading)
+            return fail(429, "upload_busy", "Another file transfer is in progress.");
+          uploading = ownsUpload = true;
+          uploadContents = controller.getWebContents(upload[1]);
+          if (!uploadContents || uploadContents.isDestroyed())
+            return fail(409, "no_web_page", "Open a web page before uploading files.");
+          uploadEpoch = trackContents(uploadContents).epoch;
+        }
         const body =
-          request.method === "POST" ? await readBody(request) : undefined;
+          request.method === "POST" ? await readBody(request, upload ? UPLOAD_BODY_LIMIT : BODY_LIMIT) : undefined;
         const operation = queue.then(() => {
           if (response.destroyed || response.writableEnded) return;
+          if (upload) return (async () => {
+            authorizeTab(upload[1]);
+            if (uploadContents!.isDestroyed() ||
+                controller.getWebContents(upload[1]) !== uploadContents ||
+                trackContents(uploadContents!).epoch !== uploadEpoch)
+              return fail(409, "page_changed", "The page changed during the transfer. Take a fresh snapshot.");
+            const payload = uploadFields(body!);
+            const result = await evaluatePage(upload[1], uploadContents!, "upload", payload, Date.now() + 30000);
+            const tab = authorizeTab(upload[1]);
+            controller.addActivity(tab.spaceId, `Agent selected ${payload.files.length} file(s) for upload`, "info");
+            return send(response, 200, result);
+          })();
           return route(request, response, body);
         });
         queue = operation.catch(() => {});
         await operation;
       } finally {
+        if (ownsUpload) uploading = false;
         pending--;
       }
     } catch (error) {

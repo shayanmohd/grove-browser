@@ -1,4 +1,5 @@
 import { waitForState } from "./wait.mjs";
+import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -96,9 +97,9 @@ const wait = (selector, text) => ({
 });
 try {
   browser = await electron.launch({
-    ...(process.env.GROVE_EXECUTABLE
-      ? { executablePath: resolve(process.env.GROVE_EXECUTABLE) }
-      : {}),
+    executablePath: process.env.GROVE_EXECUTABLE
+      ? resolve(process.env.GROVE_EXECUTABLE)
+      : await prepareDesktopRuntime(),
     args: process.env.GROVE_EXECUTABLE ? [] : [resolve("out/main/index.js")],
     env: environment,
   });
@@ -120,7 +121,8 @@ try {
     JSON.stringify(connection),
     { mode: 0o600 },
   );
-  assert.equal((await cli(["health"])).output.trim(), "ok Grove 0.1.0");
+  const packageVersion = JSON.parse(await readFile(resolve("package.json"), "utf8")).version;
+  assert.equal((await cli(["health"])).output.trim(), `ok Grove ${packageVersion}`);
   passed("standalone skill client connects using protected credentials");
   const original = (await chrome.evaluate(() => window.grove.getState()))
     .activeTabId;
@@ -467,6 +469,40 @@ try {
   passed(
     "new-tab forms preserve encoded and multipart POST bodies, referrers and background ownership exactly once",
   );
+  await json(["navigate", tab.id, `${fixture.origin}/uploads`]);
+  let uploads = await observe(tab.id);
+  assert.ok(!uploads.interactables.some((item) => item.label === "Closed upload"));
+  const bundleRef = ref(uploads, "App bundle");
+  const artworkRef = ref(uploads, "Artwork files");
+  assert.equal(uploads.interactables.find((item) => item.ref === artworkRef).hidden, true);
+  const bundleBytes = Buffer.from(Array.from({ length: 131073 }, (_, index) => index % 256));
+  const bundlePath = join(temporary, "release-café.aab");
+  const artworkPaths = [join(temporary, "icon.png"), join(temporary, "screenshot.png")];
+  const artworkBytes = Buffer.from([137, 80, 78, 71, 0, 255, 42]);
+  await writeFile(bundlePath, bundleBytes);
+  for (const path of artworkPaths) await writeFile(path, artworkBytes);
+  await cli(["upload", tab.id, artworkRef, bundlePath], undefined, { failure: true });
+  await cli(["upload", tab.id, ref(uploads, "Disabled upload"), bundlePath], undefined, { failure: true });
+  await cli(["upload", tab.id, bundleRef, ...artworkPaths], undefined, { failure: true });
+  passed("upload rejects disabled inputs, incompatible file types and multiple files in a single input");
+  await cli(["click", tab.id, ref(uploads, "Replace bundle input")]);
+  await cli(["upload", tab.id, bundleRef, bundlePath], undefined, { failure: true });
+  uploads = await observe(tab.id);
+  await cli(["upload", tab.id, ref(uploads, "App bundle"), bundlePath]);
+  await cli(["upload", tab.id, ref(uploads, "Artwork files"), ...artworkPaths]);
+  await cli(["wait", tab.id, "--stdin"], { selector: "#selected-status", text: "Selected 3 files", timeoutMs: 5000 });
+  const selected = await observe(tab.id);
+  assert.ok(!JSON.stringify(selected).includes("release-café.aab"));
+  passed("skill selects binary and multiple files, resolves hidden upload inputs, rejects stale refs and omits selected filenames");
+  await json(["batch", tab.id], [click(ref(selected, "Submit files")), wait("#upload-confirmation"), { type: "snapshot" }]);
+  const fileReceipts = fixture.events.filter((event) => event.type === "files-submitted");
+  assert.equal(fileReceipts.length, 1);
+  assert.deepEqual(fileReceipts[0].files.map((file) => ({ field: file.field, name: file.name, type: file.type, bytes: file.bytes })), [
+    { field: "bundle", name: "release-café.aab", type: "application/octet-stream", bytes: bundleBytes },
+    { field: "artwork", name: "icon.png", type: "image/png", bytes: artworkBytes },
+    { field: "artwork", name: "screenshot.png", type: "image/png", bytes: artworkBytes },
+  ]);
+  passed("multipart form submission delivers exact binary bytes, Unicode names and all files to one server receipt");
   if (process.env.GROVE_TEST_PUBLIC === "1") {
     for (const [url, expected] of [
       ["https://example.com", /Example Domain/],

@@ -2,7 +2,6 @@ import {
   Monitor,
   Moon,
   Sun,
-  ArrowUpRight,
   TreeEvergreen,
 } from "@phosphor-icons/react";
 import type { BrowserAction, BrowserState, Theme } from "../../shared/types";
@@ -27,7 +26,6 @@ export function Settings({
       open={open}
       onClose={onClose}
       title="Make Grove yours"
-      description="Small preferences for a space that feels like you."
       className="settings-modal"
     >
       <section className="settings-section">
@@ -72,7 +70,6 @@ export function Settings({
         <div className="setting-row">
           <div>
             <strong>Search engine</strong>
-            <p>Where your questions take you.</p>
           </div>
           <select
             aria-label="Default search engine"
@@ -94,7 +91,7 @@ export function Settings({
         </div>
         <div className="setting-row">
           <div>
-            <strong>Pick up where you left off</strong>
+            <strong>Restore tabs on startup</strong>
             <p>Restore personal tabs when Grove opens.</p>
           </div>
           <button
@@ -115,7 +112,7 @@ export function Settings({
         <div className="setting-row">
           <div>
             <strong>Bookmarks bar</strong>
-            <p>Your favorite pages, always in reach.</p>
+            <p>Show saved pages below the address bar.</p>
           </div>
           <button
             role="switch"
@@ -143,7 +140,6 @@ export function Settings({
           <strong>
             Grove <span>{state.version}</span>
           </strong>
-          <p>Built for curiosity. Made to be yours.</p>
         </div>
         <span className="platform-label">
           {state.platform === "web"
@@ -153,7 +149,6 @@ export function Settings({
               : state.platform === "win32"
                 ? "Windows"
                 : "Linux"}
-          <ArrowUpRight size={14} />
         </span>
       </div>
     </Modal>

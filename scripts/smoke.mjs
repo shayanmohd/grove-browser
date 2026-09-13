@@ -1,4 +1,5 @@
 import { poll, waitForState } from "./wait.mjs";
+import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
@@ -34,6 +35,7 @@ const env = { ...process.env, GROVE_USER_DATA: profile };
 delete env.ELECTRON_RUN_AS_NODE;
 async function launch() {
   app = await electron.launch({
+    executablePath: await prepareDesktopRuntime(),
     args: [resolve("out/main/index.js")],
     env,
     timeout: 30000,

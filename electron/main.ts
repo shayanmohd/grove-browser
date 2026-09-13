@@ -19,6 +19,8 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 if (process.env.GROVE_USER_DATA)
   app.setPath("userData", resolve(process.env.GROVE_USER_DATA));
 app.setName("Grove");
+if (process.platform === "win32") app.setAppUserModelId("dev.grove.browser");
+if (process.platform === "linux") app.setDesktopName("dev.grove.browser.desktop");
 
 let window: BrowserWindow | null = null;
 let controller: BrowserController | null = null;
@@ -26,7 +28,12 @@ let automation: Awaited<ReturnType<typeof startAutomation>> | null = null;
 let automationSyncing = false;
 let quitting = false;
 const rendererFile = join(moduleDirectory, "../renderer/index.html");
-const developmentUrl = !app.isPackaged
+const externalApplication = process.defaultApp === true;
+const iconFile = process.platform === "win32" ? "icon.ico" : "icon.png";
+const iconPath = externalApplication
+  ? join(moduleDirectory, "../../build", iconFile)
+  : join(process.resourcesPath, iconFile);
+const developmentUrl = externalApplication
   ? process.env.ELECTRON_RENDERER_URL
   : undefined;
 const rendererUrl = developmentUrl || pathToFileURL(rendererFile).href;
@@ -125,9 +132,6 @@ function createWindow(): void {
         : "linux";
   const statePath = join(app.getPath("userData"), "browser-state.json");
   const state = readState(statePath, platform, version);
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "icon.png")
-    : resolve("build/icon.png");
   window = new BrowserWindow({
     title: "Grove",
     width: 1440,
@@ -295,6 +299,12 @@ else {
     else window.show();
   });
   void app.whenReady().then(() => {
+    if (existsSync(iconPath)) app.dock?.setIcon(iconPath);
+    app.setAboutPanelOptions({
+      applicationName: "Grove",
+      applicationVersion: version,
+      ...(existsSync(iconPath) ? { iconPath } : {}),
+    });
     const canWriteClipboard = (
       contents: Electron.WebContents | null,
       permission: string,

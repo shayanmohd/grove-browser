@@ -39,7 +39,7 @@ import {
 } from "@phosphor-icons/react";
 import type { BrowserAction, BrowserState, SpaceColor } from "../shared/types";
 import { HOME_URL, initialState } from "../shared/state";
-import { hostname } from "../shared/url";
+import { hostname, isGoogleSignInRejectedUrl } from "../shared/url";
 import { bridge, isDesktop } from "./lib/bridge";
 import { Brand, IconButton, Modal, SiteIcon } from "./components/ui";
 import { Sidebar } from "./components/Sidebar";
@@ -89,6 +89,8 @@ export default function App() {
     state.spaces[0];
   const splitTab = state.tabs.find((tab) => tab.id === state.splitTabId);
   const isHome = !active || active.url === HOME_URL;
+  const googleSignInRejected =
+    isDesktop && !!active && isGoogleSignInRejectedUrl(active.url);
   const ownedByAgent =
     activeSpace.kind === "agent" && activeSpace.owner === "agent";
   const mac = state.platform === "darwin";
@@ -195,6 +197,7 @@ export default function App() {
     ready,
     findOpen,
     ownedByAgent,
+    googleSignInRejected,
   ]);
 
   const navigate = useCallback(
@@ -527,6 +530,31 @@ export default function App() {
             </button>
           </div>
         )}
+        {googleSignInRejected && (
+          <section
+            className="sign-in-notice"
+            role="status"
+            aria-label="Google sign-in unavailable"
+          >
+            <WarningCircle size={20} />
+            <div>
+              <strong>Google sign-in is unavailable in this preview.</strong>
+              <p>
+                Continue in your default browser; this will not sign you into
+                Grove.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() =>
+                dispatch({ type: "tab:open-external", id: active.id })
+              }
+            >
+              Open in default browser <ArrowSquareOut size={15} />
+            </button>
+          </section>
+        )}
         {findOpen && (
           <form
             className="find-bar"
@@ -590,9 +618,7 @@ export default function App() {
                 onNavigate={navigate}
                 onCommand={() => setModal("command")}
                 onBookmark={openBookmark}
-                onAgents={() => setPanel("agents")}
                 onHistory={() => setPanel("history")}
-                onSpace={() => openSpace()}
               />
             ) : (
               <div className={`web-page ${splitTab ? "split-preview" : ""}`}>
@@ -650,27 +676,14 @@ export default function App() {
             />
           )}
         </div>
-        <footer className="browser-status">
-          <span>
-            <TreeEvergreen size={12} />
-            {isDesktop
-              ? activeSpace.kind === "agent"
-                ? "Ephemeral agent session"
-                : "Your space. Your pace."
-              : "Interactive web preview"}
-          </span>
-          <span>
-            {state.tabs.length} tabs across {state.spaces.length} spaces
-            <span className="status-separator" />
-            {isDesktop
-              ? state.platform === "darwin"
-                ? "macOS"
-                : state.platform === "win32"
-                  ? "Windows"
-                  : "Linux"
-              : "Desktop app for macOS, Windows & Linux"}
-          </span>
-        </footer>
+        {(!isDesktop || activeSpace.kind === "agent") && (
+          <footer className="browser-status">
+            <span>
+              <TreeEvergreen size={12} />
+              {isDesktop ? "Temporary agent space" : "Interactive web preview"}
+            </span>
+          </footer>
+        )}
       </main>
       <CommandPalette
         open={modal === "command"}

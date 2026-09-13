@@ -1,4 +1,5 @@
 import { waitForState } from "./wait.mjs";
+import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import { _electron as electron } from "playwright";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -10,6 +11,7 @@ delete environment.ELECTRON_RUN_AS_NODE;
 let app;
 try {
   app = await electron.launch({
+    executablePath: await prepareDesktopRuntime(),
     args: [resolve("out/main/index.js")],
     env: environment,
   });

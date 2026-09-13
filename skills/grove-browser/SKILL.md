@@ -31,10 +31,14 @@ Use refs from a current snapshot, or a unique CSS selector you have observed. Re
 
 For one action, use `click TAB_ID @e12` or pipe the exact field value to `fill TAB_ID @e8 --stdin`. Fill preserves trailing newlines. Group known, authorized form actions into one `batch TAB_ID` request using JSON on stdin. Read [actions.md](references/actions.md) for the schema, a form example, waits, key presses, scrolling, and limits. End a submission batch with a targeted wait and snapshot to verify the result.
 
+For files, read the [file selection guidance](references/actions.md#select-files) before `upload TAB_ID REF file [files]`. Use a current file-input ref and files covered by the user's authorization. Selection can immediately send files to the site; verify its receipt before continuing or retrying.
+
 ## Stop and verify
 
 Batch execution stops on its first failure. Earlier actions may already have changed the page. Inspect the returned completed actions and current page before deciding what remains. Never replay an entire form batch after a timeout or retry a submission without checking its outcome. A successful click is not proof of a successful submission.
 
 Use only actions covered by the user's authorization. If Grove reports human control, stop actions on that space. The API cannot resume it; the user can return control in Agent studio. `handoff SPACE_ID` pauses access when the user should continue.
+
+Google sign-in was rejected in the current desktop preview. If a site rejects the browser during authentication, report the block and stop the authenticated workflow. Opening a default browser does not authenticate the Grove space.
 
 Snapshots cover the top document, not iframes, shadow roots, PDF internals, or canvas controls. Use `screenshot TAB_ID ./page.png` when visual inspection helps; it saves a viewport PNG and refuses to overwrite a file. Report unsupported interactions rather than silently switching to another browser or broader access.

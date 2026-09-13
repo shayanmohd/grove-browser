@@ -8,8 +8,7 @@ import {
   DownloadSimple,
   Trash,
   FolderOpen,
-  Cpu,
-  ShieldCheck,
+  CaretDown,
   Hand,
   Play,
   Copy,
@@ -85,14 +84,7 @@ export function SidePanel({
         {panel === "agents" ? (
           <>
             <div className="agent-intro">
-              <span className="agent-intro-icon">
-                <Cpu size={29} />
-              </span>
-              <h3>
-                A second pair of hands.
-                <br />A separate set of tabs.
-              </h3>
-              <p>Give your agent a space to work. Your browsing stays yours.</p>
+              <p>Separate, temporary tabs for your agent.</p>
             </div>
             <div className="connection-card">
               <div>
@@ -123,7 +115,7 @@ export function SidePanel({
               </div>
               <p>
                 {isDesktop
-                  ? "Connect a local agent through the Grove API."
+                  ? "Allow a local agent to use Grove."
                   : "Install the desktop app to connect an agent."}
               </p>
               {state.automation.running && (
@@ -189,49 +181,52 @@ export function SidePanel({
               <button className="new-agent-space" onClick={onNewSpace}>
                 <Plus size={21} />
                 <strong>Create an agent space</strong>
-                <small>A clean session, just for the task.</small>
               </button>
             )}
-            <div className="agent-privacy">
-              <ShieldCheck size={19} />
+            <details className="panel-disclosure">
+              <summary>
+                How agent spaces work <CaretDown size={14} />
+              </summary>
               <p>
                 Agent spaces have separate cookies and disappear when you quit.
                 Take control at any time.
               </p>
-            </div>
-            <div className="panel-section-label">
-              <h3>Activity</h3>
-              <span>{state.activity.length}</span>
-            </div>
-            {state.activity.length ? (
-              <div className="activity-list">
-                {state.activity.slice(0, 25).map((item) => (
-                  <div key={item.id}>
-                    <span className={`activity-icon ${item.kind}`}>
-                      {item.kind === "success" ? (
-                        <Check size={13} />
-                      ) : (
-                        <Terminal size={13} />
-                      )}
-                    </span>
-                    <p>
-                      {item.message}
-                      <time>
-                        {new Date(item.time).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </time>
-                    </p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="activity-empty">
-                <Plug size={20} />
-                <p>Actions will appear here when an agent gets to work.</p>
-              </div>
-            )}
+            </details>
+            <details className="panel-disclosure activity-disclosure">
+              <summary>
+                Activity <span>{state.activity.length}</span>
+                <CaretDown size={14} />
+              </summary>
+              {state.activity.length ? (
+                <div className="activity-list">
+                  {state.activity.slice(0, 25).map((item) => (
+                    <div key={item.id}>
+                      <span className={`activity-icon ${item.kind}`}>
+                        {item.kind === "success" ? (
+                          <Check size={13} />
+                        ) : (
+                          <Terminal size={13} />
+                        )}
+                      </span>
+                      <p>
+                        {item.message}
+                        <time>
+                          {new Date(item.time).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </time>
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="activity-empty">
+                  <Plug size={20} />
+                  <p>Actions will appear here when an agent gets to work.</p>
+                </div>
+              )}
+            </details>
           </>
         ) : (
           <>
@@ -401,15 +396,9 @@ export function SidePanel({
           </>
         )}
       </div>
-      <div className="panel-footnote">
-        {panel === "agents" ? (
-          <>
-            <ShieldCheck size={14} /> Your browsing is always yours.
-          </>
-        ) : (
-          "Stored locally on this device."
-        )}
-      </div>
+      {panel !== "agents" && (
+        <div className="panel-footnote">Stored locally on this device.</div>
+      )}
     </aside>
   );
 }

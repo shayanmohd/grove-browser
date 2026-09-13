@@ -1,34 +1,42 @@
-# Snapshot token comparison
+# Snapshot size measurements
 
-On September 11, 2026, Grove's full snapshot output used **1,605 tokens** across four local fixture pages, compared with **3,091 tokens** from ego-browser 0.4.7.4: a **48.1% reduction** under the `o200k_base` tokenizer.
+Grove's full snapshot output uses **1,605 tokens** across four captured local fixture pages under the `o200k_base` tokenizer. These observations were recorded on September 11, 2026, using Grove 0.1.0 on an Apple Silicon Mac running macOS 15.7.2 and Electron 44.2.0.
 
-| Same local page and state | ego-browser tokens | Grove tokens | Reduction |
-| --- | ---: | ---: | ---: |
-| Form builder | 290 | 148 | 49.0% |
-| Created response form | 447 | 247 | 44.7% |
-| Successful submission receipt | 368 | 155 | 57.9% |
-| Reference page with 18 notes | 1,986 | 1,055 | 46.9% |
-| Total | 3,091 | 1,605 | 48.1% |
+| Page and state | Snapshot tokens |
+| --- | ---: |
+| Form builder | 148 |
+| Created response form | 247 |
+| Successful submission receipt | 155 |
+| Reference page with 18 notes | 1,055 |
+| Total | 1,605 |
 
-## Method
+## What is measured
 
-Both browsers visited the same locally hosted [fixture](../tests/fixtures/form-site.mjs) on an Apple Silicon Mac running macOS 15.7.2. ego-browser reported version 0.4.7.4 with Chromium 150.0.7871.101. Grove was version 0.1.0 with Electron 44.2.0. Both created a form, filled fictional response data, submitted it, and observed the confirmation.
+The [local fixture](../tests/fixtures/form-site.mjs) includes a working form builder and response handler. The skill created a form, filled fictional data, submitted a response, and observed the confirmation.
 
-The baseline used ego-browser's default full-page `snapshotText()`. Grove used its skill client's `snapshot TAB_ID --full` plain-text output. Its 24,000-character and 100-control budgets did not truncate any page. The reference snapshot includes all 18 note headings and all 18 note links in both outputs. Dynamic local ports were normalized to `3000` before counting. Whitespace, refs, and output formatting were otherwise preserved.
+Each capture is the skill client's `snapshot TAB_ID --full` plain-text output. Its 24,000-character and 100-control budgets did not truncate these pages. The reference snapshot includes all 18 note headings and all 18 note links. Dynamic loopback ports were normalized to `3000` before counting. Whitespace, refs, and output formatting were otherwise preserved.
 
-The [captured observations](../tests/fixtures/benchmarks) contain only this project's synthetic pages. The [machine-readable results](benchmark-results.json) record token counts, character counts, and SHA-256 hashes. Recalculate them with:
+The [captured observations](../tests/fixtures/benchmarks) contain only the project's synthetic pages. The [machine-readable results](benchmark-results.json) record token counts, character counts, and SHA-256 hashes. Recalculate them with:
 
 ```sh
 npm ci
 node scripts/benchmark.mjs
 ```
 
-To collect a fresh Grove run, build the app and run `npm run test:skill`. It writes observations to ignored `artifacts/review`. To compare another ego-browser version, run `node scripts/review-session.mjs` in an interactive terminal and visit its printed local origin with that version's documented skill. Observe `/forms/new`, create and submit a form, and observe `/benchmark` with `snapshotText()`. Press Enter in the review session to close its fixture and temporary browser. Keep the printed connection file outside the repository and never copy its token into results.
+Use `node scripts/benchmark.mjs --write` to refresh the JSON report from the committed fixtures and current skill instructions. The script checks for truncation and verifies that all reference notes and links remain present.
 
-## Skill instruction cost
+## Collect a fresh run
 
-The Grove entrypoint was 726 tokens. Its action reference added 1,299 and its connection reference added 438, for 2,463 tokens if all three files were read. The installed ego-browser skill entrypoint was 4,659 tokens. Its hash is recorded in the results; its third-party skill text is not redistributed here. Set `EGO_SKILL_FILE` to an authorized local skill path when running the benchmark script to measure another installed copy.
+Build the app and run `npm run test:skill`. It writes observations to ignored `artifacts/review`. Inspect those files before replacing committed captures. Normalize the temporary loopback port, record the application version and capture date, and recalculate the report.
 
-This is a comparison of instruction and observation text sizes. It excludes model reasoning, generated commands, tool schemas, screenshots, caches, and application billing. It does not measure overall task token consumption, latency, memory, or reliability across the web. Grove's compact default and scoped observations can return less text, but those were not used to inflate this full-page comparison.
+For an interactive review, run `node scripts/review-session.mjs` in a terminal. Use its printed local origin and protected connection file with the Grove skill. Press Enter in the review session to close the temporary browser and fixture. Keep connection files outside the repository and never include their tokens in captured results.
 
-The outputs have different semantics. ego-browser provides a richer semantic tree, locator metadata, and more automation capabilities. Grove provides a bounded top-document DOM summary with short control refs, and omits current input and editable draft values. Grove now includes exact select option values and disabled states, adding 31 tokens across the two form observations compared with its earlier output. Lower text size does not imply feature parity. Grove does not automate iframes, shadow roots, canvas editors, or file uploads. The ego form run needed an explicit scroll before its below-viewport dynamic-field button could be clicked; Grove's tested click handler scrolled to the control. That single fixture result is not a general reliability ranking.
+## Skill instruction size
+
+The same script measures the current skill entrypoint and its two reference documents. It records each file independently in the JSON report, since agents only need to read the references relevant to their task. These instruction counts can change when the skill is updated, while the dated fixture captures remain the same.
+
+## Practical limits
+
+These numbers describe observation and instruction text sizes. They exclude model reasoning, generated commands, tool schemas, screenshots, caching, and application billing. They do not measure total task token consumption, latency, memory use, or reliability across the web.
+
+Grove provides a bounded summary of the top document with short control refs, exact select option values, and disabled states. It omits current input values and editable drafts. The compact default and scoped observations can return less text than the full snapshots measured here. Lower output size alone does not establish completeness or success on a particular task.

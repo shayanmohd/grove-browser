@@ -43,10 +43,20 @@ Supported keys: `Enter`, `Tab`, `Escape`, `Backspace`, `Delete`, `ArrowUp`, `Arr
 
 Single-action equivalents include `click TAB_ID @e4`, `press TAB_ID Enter @e4`, `scroll TAB_ID down 600`, and `wait TAB_ID --stdin` with JSON options. A single fill takes raw text through stdin, whereas batch values are JSON strings. The client preserves fill input exactly, including trailing newlines.
 
+## Select files
+
+Use `node scripts/grove.mjs upload TAB_ID REF file [files]` as a standalone command. It is not a batch action. Obtain `REF` from a fresh snapshot of the actual file input; CSS selectors and a nearby upload button are not accepted targets. Snapshots show the input's accepted types, single or multiple selection, and whether it is hidden inside visible upload UI.
+
+Select 1 to 8 regular files totaling at most 16 MiB. A single-file input accepts only one file. Disabled inputs, directories, detached controls, hidden upload UI, and files that do not match the input's accepted extensions or MIME types are rejected. The action covers the top document only. Sites requiring a trusted native chooser or native file handles may not support this action.
+
+The local client reads only the selected files and transfers their bytes, basenames, and MIME types through the authenticated connection. The API accepts bytes in memory, not local filesystem paths. One transfer runs at a time. Only the upload route permits a 24 MiB JSON body; normal requests and batches retain their 64 KiB limit. Keep private paths, file contents, and base64 data out of page fields, prompt text, and public logs.
+
+Confirm the selected files and destination fall within the user's existing authorization before running the command. Setting the input dispatches input and change events, so a site may upload immediately without a submit click. A result such as `{ "ok": true, "selected": 1 }` proves selection only. Wait for and inspect the site's completion or receipt, including its filename or release version when relevant. If the command times out or the site reports an error, inspect its current state before retrying; do not select or submit the same files blindly.
+
 ## Verification and scope
 
 After a submission, check a confirmation element, changed page state, or another outcome tied to the user's task. For a form that opens a new tab, list `tabs SPACE_ID` and inspect the new tab for its receipt. Do not treat the absence of an error as confirmation. If a request times out, its side effects may still have happened. Inspect before retrying any consequential action.
 
 `handoff SPACE_ID` pauses all API page access for that space. A human takeover interrupts subsequent batch actions. Already dispatched clicks or submissions cannot be undone by the API. `409 human_control` means stop and wait for the user to explicitly resume. Do not try to bypass it.
 
-Snapshots do not enter iframe documents, shadow roots, PDF internals, or canvas interfaces. Screenshot files contain only the current viewport. There is no arbitrary script evaluation, file upload, JavaScript dialog action, or personal-session access command. An alert, confirm, or prompt may block a page action; use human handoff to resolve it.
+Snapshots do not enter iframe documents, shadow roots, PDF internals, or canvas interfaces. Screenshot files contain only the current viewport. There is no arbitrary script evaluation, JavaScript dialog action, or personal-session access command. An alert, confirm, or prompt may block a page action; use human handoff to resolve it.

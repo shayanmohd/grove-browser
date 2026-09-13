@@ -74,6 +74,7 @@ export type BrowserAction =
   | { type: "tab:close"; id: string }
   | { type: "tab:activate"; id: string }
   | { type: "tab:navigate"; id: string; url: string }
+  | { type: "tab:open-external"; id: string }
   | {
       type:
         | "tab:back"

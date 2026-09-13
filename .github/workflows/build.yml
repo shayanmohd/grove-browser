@@ -62,6 +62,12 @@ jobs:
       - name: Smoke test desktop on Linux
         if: runner.os == 'Linux'
         run: xvfb-run -a npm run test:desktop
+      - name: Verify native Grove identity on Linux
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:branding
+      - name: Verify native Grove identity on macOS and Windows
+        if: runner.os != 'Linux'
+        run: npm run test:branding
       - name: Smoke test desktop on macOS and Windows
         if: runner.os != 'Linux'
         run: npm run test:desktop

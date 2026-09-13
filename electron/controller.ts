@@ -11,7 +11,7 @@ import { writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { HOME_URL, newTab } from "../shared/state";
-import { isWebUrl, normalizeUrl } from "../shared/url";
+import { googleSignInFallback, isWebUrl, normalizeUrl } from "../shared/url";
 import type {
   Activity,
   BrowserAction,
@@ -756,6 +756,14 @@ export class BrowserController {
         this.state.tabs.push(tab);
         if (!action.background) this.activate(tab);
         if (isWebUrl(tab.url)) this.ensureView(tab);
+        break;
+      }
+      case "tab:open-external": {
+        const tab = this.state.tabs.find((item) => item.id === action.id);
+        if (tab && tab.id === this.state.activeTabId) {
+          const destination = googleSignInFallback(tab.url);
+          if (destination) await shell.openExternal(destination);
+        }
         break;
       }
       case "tab:activate":

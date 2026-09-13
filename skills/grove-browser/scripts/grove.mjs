@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { constants } from "node:fs";
 import { open, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const HELP = `Grove browser client
@@ -26,6 +26,7 @@ Usage: node grove.mjs <command> [arguments] [--json]
   click <tab-id> <ref-or-selector>     Click a control
   fill <tab-id> <ref-or-selector> --stdin
                                       Read the exact field value from stdin
+  upload <tab-id> <ref> <file> [files] Select up to 8 files, 16 MiB total
   press <tab-id> <key> [ref-or-selector]
                                       Press a supported key
   scroll <tab-id> <direction> [pixels] Scroll up, down, left or right
@@ -164,6 +165,8 @@ export function formatSnapshot(snapshot) {
       lines.push(
         `${line(control.ref || control.selector)} ${line(control.role || control.tag)} ${JSON.stringify(line(control.label))}${control.disabled ? " [disabled]" : ""}`,
       );
+      if (control.type === "file")
+        lines.push(`  file upload: ${control.multiple ? "multiple" : "single"}${control.accept ? `; accepts ${line(control.accept)}` : ""}${control.hidden ? "; hidden input in visible form" : ""}`);
       for (const option of control.options || [])
         lines.push(
           `  ${JSON.stringify(line(option.value))}: ${JSON.stringify(line(option.label))}${option.disabled ? " [disabled]" : ""}`,
@@ -307,6 +310,47 @@ export async function runCli(argv, options = {}) {
       method = "POST";
       body = { ...target(args[1]), value: await readInput(stdin) };
       break;
+    case "upload": {
+      path = `/tabs/${identifier(args[0])}/upload`;
+      method = "POST";
+      if (!/^@e[1-9]\d*$/.test(args[1] || ""))
+        throw new Error("Upload requires a current file input ref from a snapshot.");
+      const paths = args.slice(2);
+      if (paths.length < 1 || paths.length > 8)
+        throw new Error("Upload requires between 1 and 8 selected file paths.");
+      const mime = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".json": "application/json", ".zip": "application/zip", ".aab": "application/octet-stream", ".apk": "application/vnd.android.package-archive" };
+      const files = [];
+      let total = 0;
+      for (const path of paths) {
+        let file;
+        try {
+          file = await open(resolve(path), constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
+          const stat = await file.stat();
+          if (!stat.isFile() || stat.size > 16 * 1024 * 1024 - total)
+            throw new Error("Select regular files totaling at most 16 MiB.");
+          // Read a bounded allocation even if another process grows the file.
+          const bytes = Buffer.alloc(stat.size + 1);
+          let length = 0;
+          while (length < bytes.length) {
+            const { bytesRead } = await file.read(bytes, length, bytes.length - length, length);
+            if (!bytesRead) break;
+            length += bytesRead;
+          }
+          if (length !== stat.size)
+            throw new Error("A selected file changed size while being read. Inspect it before retrying.");
+          total += length;
+          files.push({ name: basename(path), type: mime[extname(path).toLowerCase()] || "application/octet-stream", data: bytes.subarray(0, length).toString("base64") });
+        } catch (error) {
+          if (typeof error?.code === "string")
+            throw new Error("Could not read a selected file. Check that it is readable, regular, and not a symbolic link.");
+          throw error;
+        } finally {
+          await file?.close();
+        }
+      }
+      body = { ref: args[1], files };
+      break;
+    }
     case "press":
       path = `/tabs/${identifier(args[0])}/press`;
       method = "POST";
@@ -369,7 +413,7 @@ export async function runCli(argv, options = {}) {
       throw new Error(`Unknown command: ${command}. Run help for usage.`);
   }
   const encoded = body === undefined ? undefined : JSON.stringify(body);
-  if (encoded && Buffer.byteLength(encoded) > 65536)
+  if (encoded && Buffer.byteLength(encoded) > (command === "upload" ? 24 * 1024 * 1024 : 65536))
     throw new Error(
       "Encoded request exceeds 64 KiB. Split the batch or reduce field values.",
     );

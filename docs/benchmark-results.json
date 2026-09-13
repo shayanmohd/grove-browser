@@ -2,68 +2,44 @@
   "tokenizer": "o200k_base",
   "tokenizerPackage": "js-tiktoken@1.0.21",
   "source": "Captured local Chromium observations, normalized loopback port 3000",
+  "capturedAt": "2026-09-11",
+  "groveVersion": "0.1.0",
   "fixtures": [
     {
       "name": "form",
-      "ego": {
-        "characters": 991,
-        "tokens": 290,
-        "sha256": "66e1d6db994d117a00b826efbd2391851cac9e431ec8105904dc1758269eb3fb"
-      },
       "grove": {
         "characters": 531,
         "tokens": 148,
         "sha256": "64158a3a9cafbac15a84d564075e4fc26907ef7bd1acf33a816efb857e1fac62"
-      },
-      "reductionPercent": 49
+      }
     },
     {
       "name": "created-form",
-      "ego": {
-        "characters": 1586,
-        "tokens": 447,
-        "sha256": "80f1cbd1caf552e082453a00cc1d62f5a60050ff190c4bf494ed522d079a192c"
-      },
       "grove": {
         "characters": 920,
         "tokens": 247,
         "sha256": "3d8b87f40fe380b73229c964fc4ee06231ebbc88e45d736e3a080a090fae2cea"
-      },
-      "reductionPercent": 44.7
+      }
     },
     {
       "name": "receipt",
-      "ego": {
-        "characters": 1405,
-        "tokens": 368,
-        "sha256": "3cc47825c1909f0592fc5f74a5d16b2818e903147f8bb2bbb016c46e28f45f88"
-      },
       "grove": {
         "characters": 636,
         "tokens": 155,
         "sha256": "a259bb6cca8d8b55a6fc59d55d413e7ca379da58058d8722c5f240b7494bf380"
-      },
-      "reductionPercent": 57.9
+      }
     },
     {
       "name": "reference",
-      "ego": {
-        "characters": 8086,
-        "tokens": 1986,
-        "sha256": "241897f82234ae3a5b6f73a5a4075eb46233d98447f0a01a7874f4ca19cabf5d"
-      },
       "grove": {
         "characters": 4933,
         "tokens": 1055,
         "sha256": "e1dcb5c4182aaf4ba8639711d06b2f8f541f95e6e5836ac9d52d3265c1e71ed8"
-      },
-      "reductionPercent": 46.9
+      }
     }
   ],
   "totals": {
-    "egoTokens": 3091,
-    "groveTokens": 1605,
-    "reductionPercent": 48.1
+    "groveTokens": 1605
   },
   "groveSkill": {
     "SKILL.md": {
@@ -81,10 +57,5 @@
       "tokens": 438,
       "sha256": "e647452dbfa567193ad753984fa7e58c700f4639bb9e07c34215b3c00021bb05"
     }
-  },
-  "egoSkill": {
-    "characters": 19655,
-    "tokens": 4659,
-    "sha256": "44c119634df847861486c3b104cda3c2faa9dd4c71dbb3a854429098be962293"
   }
 }

@@ -215,18 +215,7 @@ export function Sidebar({
             <GearSix size={19} />
           </IconButton>
         </div>
-        <div className="profile-row">
-          <span className="profile-avatar">G</span>
-          <div>
-            <strong>Your little corner</strong>
-            <small>Saved on this device</small>
-          </div>
-          <LeafBadge />
-        </div>
       </div>
     </aside>
   );
-}
-function LeafBadge() {
-  return <TreeEvergreen size={17} className="profile-leaf" />;
 }

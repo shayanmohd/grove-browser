@@ -1,4 +1,5 @@
 import type { BrowserState, Tab } from "./types";
+import { version } from "../package.json";
 
 export const HOME_URL = "grove://newtab";
 export const id = () => globalThis.crypto.randomUUID();
@@ -85,7 +86,7 @@ export function initialState(
       automationEnabled: false,
     },
     platform,
-    version: "0.1.0",
+    version,
     automation: { running: false, port: null },
   };
 }

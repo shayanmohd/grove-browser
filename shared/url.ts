@@ -52,3 +52,30 @@ export function isWebUrl(url: string): boolean {
     return false;
   }
 }
+
+export function isGoogleSignInRejectedUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.origin === "https://accounts.google.com" &&
+      !url.username && !url.password &&
+      /^\/(?:v\d+\/)?signin\/rejected\/?$/.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export function googleSignInFallback(value: string): string | undefined {
+  if (!isGoogleSignInRejectedUrl(value)) return;
+  const rejected = new URL(value);
+  try {
+    const destination = new URL(rejected.searchParams.get("continue") || "");
+    if (destination.origin === "https://play.google.com" &&
+        !destination.username && !destination.password &&
+        destination.pathname.startsWith("/console/"))
+      return "https://play.google.com/console/";
+  } catch {
+    // Only fixed public destinations leave the application. Authentication
+    // query parameters and provider redirects are never sent to the OS shell.
+  }
+  return "https://accounts.google.com/";
+}

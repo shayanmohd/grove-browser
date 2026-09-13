@@ -12,6 +12,8 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  - from: build/icon.ico
+    to: icon.ico
 publish: null
 mac:
   category: public.app-category.productivity
@@ -53,6 +55,7 @@ portable:
   artifactName: Grove-${version}-windows-${arch}-portable.${ext}
 linux:
   executableName: grove
+  syncDesktopName: true
   icon: build/icon.png
   category: Network
   synopsis: A focused browser with spaces for people and agents
@@ -69,5 +72,5 @@ linux:
       Comment: A little more room to think
       Categories: Network;WebBrowser;
       Keywords: browser;web;spaces;automation;
-      StartupWMClass: Grove
+      StartupWMClass: dev.grove.browser
       Terminal: "false"

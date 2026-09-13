@@ -25,6 +25,16 @@ export async function startFormSite() {
     };
     try {
       if (request.method === 'GET' && url.pathname === '/edges') return send('Browser edge cases', edgeCases.body, edgeCases.script);
+      if (request.method === 'GET' && url.pathname === '/uploads') return send('File upload lab', `<h1>Upload test files</h1><form action="/upload-receipt" method="post" enctype="multipart/form-data"><label for="bundle">App bundle</label><input id="bundle" type="file" name="bundle" accept=".aab" required><section><label for="artwork">Artwork files</label><input id="artwork" style="display:none" type="file" name="artwork" accept="image/png" multiple></section><section hidden><input type="file" id="closed-upload" aria-label="Closed upload"></section><label for="disabled-upload">Disabled upload</label><input type="file" id="disabled-upload" disabled><button type="button" id="replace-upload">Replace bundle input</button><button type="submit">Submit files</button><p id="selected-status" role="status"></p></form>`, `document.querySelector('#replace-upload').onclick=()=>{const input=document.querySelector('#bundle');input.replaceWith(input.cloneNode());};document.querySelector('form').addEventListener('change',()=>{document.querySelector('#selected-status').textContent='Selected '+Array.from(document.querySelectorAll('input[type=file]')).reduce((n,input)=>n+input.files.length,0)+' files';});`);
+      if (request.method === 'POST' && url.pathname === '/upload-receipt') {
+        const chunks = []; let size = 0;
+        for await (const chunk of request) { size += chunk.length; if (size > 2 * 1024 * 1024) throw new Error('Upload too large'); chunks.push(chunk); }
+        const data = await new Request('http://localhost', { method: 'POST', headers: { 'content-type': request.headers['content-type'] }, body: Buffer.concat(chunks) }).formData();
+        const files = [];
+        for (const [field, file] of data) if (typeof file !== 'string') files.push({ field, name: file.name, type: file.type, bytes: Buffer.from(await file.arrayBuffer()) });
+        events.push({ type: 'files-submitted', files });
+        return send('Files received', `<h1 id="upload-confirmation">Files received</h1><p>${files.length} files received exactly once.</p><ul>${files.map(file=>`<li>${escape(file.name)}: ${file.bytes.length} bytes</li>`).join('')}</ul>`);
+      }
       if (url.pathname === '/popup-receipt') {
         const chunks = []; let size = 0;
         for await (const chunk of request) { size += chunk.length; if (size > 32768) throw new Error('Form too large'); chunks.push(chunk); }

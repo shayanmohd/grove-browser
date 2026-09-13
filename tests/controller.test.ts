@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow } from "electron";
-import { dialog, session, WebContentsView } from "electron";
+import { dialog, session, shell, WebContentsView } from "electron";
 import { BrowserController } from "../electron/controller";
 import { HOME_URL, initialState, newTab } from "../shared/state";
 
@@ -18,7 +18,7 @@ vi.mock("electron", () => ({
     }),
   },
   dialog: { showMessageBox: vi.fn(), showSaveDialog: vi.fn() },
-  shell: { showItemInFolder: vi.fn() },
+  shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) },
 }));
 vi.mock("../electron/persistence", async (original) => ({
   ...(await original<typeof import("../electron/persistence")>()),
@@ -124,6 +124,20 @@ afterEach(() => {
 });
 
 describe("native browser lifecycle", () => {
+  it("opens only the active rejected Google page through a fixed external destination", async () => {
+    const browser = controller();
+    const tab = browser.state.tabs.find((item) => item.id === browser.state.activeTabId)!;
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    tab.url = "https://accounts.google.com/v3/signin/rejected?continue=" + encodeURIComponent("https://play.google.com/console/private?state=secret");
+    await browser.dispatch({ type: "tab:open-external", id: "missing" });
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith("https://play.google.com/console/");
+    browser.state.activeTabId = browser.state.tabs.find((item) => item.id !== tab.id)!.id;
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).toHaveBeenCalledTimes(1);
+  });
   it("preserves a new-window form's POST body and referrer when opening its tab", async () => {
     const browser = controller();
     const sourceId = browser.state.activeTabId;

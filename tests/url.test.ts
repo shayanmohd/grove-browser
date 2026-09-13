@@ -1,6 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { HOME_URL } from "../shared/state";
-import { hostname, isWebUrl, normalizeUrl } from "../shared/url";
+import { googleSignInFallback, hostname, isGoogleSignInRejectedUrl, isWebUrl, normalizeUrl } from "../shared/url";
+
+describe("Google sign-in fallback", () => {
+  it("recognizes the rejection page and discards authentication query parameters", () => {
+    const url = "https://accounts.google.com/v3/signin/rejected?continue=" + encodeURIComponent("https://play.google.com/console/u/0/developers/private?token=secret");
+    expect(isGoogleSignInRejectedUrl(url)).toBe(true);
+    expect(googleSignInFallback(url)).toBe("https://play.google.com/console/");
+    expect(googleSignInFallback("https://accounts.google.com/signin/rejected?continue=custom%3A%2F%2Fpayload")).toBe("https://accounts.google.com/");
+  });
+  it("does not trust lookalike hosts, credentials, ports, schemes or unrelated pages", () => {
+    for (const url of [
+      "https://accounts.google.com.example.org/v3/signin/rejected",
+      "https://secret@accounts.google.com/v3/signin/rejected",
+      "http://accounts.google.com/v3/signin/rejected",
+      "https://accounts.google.com:444/v3/signin/rejected",
+      "https://accounts.google.com/v3/signin/identifier",
+      "javascript:alert(1)",
+    ]) {
+      expect(isGoogleSignInRejectedUrl(url)).toBe(false);
+      expect(googleSignInFallback(url)).toBeUndefined();
+    }
+  });
+});
 
 describe("address bar normalization", () => {
   it.each(["", "   ", HOME_URL])(

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "node:stream";
-import { chmod, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -151,5 +151,71 @@ describe("standalone skill client", () => {
     await expect(
       runCli(["screenshot", "tab-1", path], { env, fetch, stdout: sink() }),
     ).rejects.toThrow("EEXIST");
+  });
+
+  it("uploads exact selected bytes with basenames and MIME types, without disclosing local paths", async () => {
+    const prefix = await connectionFile();
+    const paths = [`${prefix}.aab`, `${prefix}.PNG`];
+    const bytes = [Buffer.from([0, 255, 128, 65, 10]), Buffer.from([137, 80, 78, 71])];
+    await Promise.all(paths.map((path, index) => writeFile(path, bytes[index])));
+    const fetch = vi.fn(async () => Response.json({ ok: true, selected: 2 }));
+    const stdout = sink();
+    expect(await runCli(["upload", "tab-1", "@e3", ...paths], { env, fetch, stdout })).toBe(0);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = fetch.mock.calls[0];
+    expect(url.href).toBe(`${env.GROVE_ENDPOINT}/tabs/tab-1/upload`);
+    const payload = JSON.parse(options.body);
+    expect(payload.ref).toBe("@e3");
+    expect(payload.files).toEqual([
+      { name: "connection.json.aab", type: "application/octet-stream", data: bytes[0].toString("base64") },
+      { name: "connection.json.PNG", type: "image/png", data: bytes[1].toString("base64") },
+    ]);
+    expect(options.headers.Authorization).toBe(`Bearer ${env.GROVE_TOKEN}`);
+    expect(options.redirect).toBe("error");
+    for (const [index, path] of paths.entries()) {
+      expect(options.body).not.toContain(path);
+      expect(stdout.text()).not.toContain(path);
+      expect(await readFile(path)).toEqual(bytes[index]);
+    }
+  });
+
+  it("rejects upload selectors, directories, excess file counts, and aggregate size before connecting", async () => {
+    const file = await connectionFile();
+    const directory = await mkdtemp(join(tmpdir(), "grove-upload-directory-"));
+    directories.push(directory);
+    const fetch = vi.fn();
+    for (const args of [
+      ["upload", "tab-1", "#upload", file],
+      ["upload", "tab-1", "@e0", file],
+      ["upload", "tab-1", "@e1"],
+      ["upload", "tab-1", "@e1", ...Array(9).fill(file)],
+      ["upload", "tab-1", "@e1", directory],
+    ])
+      await expect(runCli(args, { env, fetch, stdout: sink() })).rejects.toThrow();
+    const large = `${file}.aab`;
+    const handle = await open(large, "w");
+    await handle.truncate(16 * 1024 * 1024 + 1);
+    await handle.close();
+    await expect(runCli(["upload", "tab-1", "@e1", large], { env, fetch, stdout: sink() })).rejects.toThrow("16 MiB");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(process.platform === "win32")("refuses symbolic links for selected upload files", async () => {
+    const file = await connectionFile();
+    const link = `${file}.png`;
+    await symlink(file, link);
+    const fetch = vi.fn();
+    await expect(runCli(["upload", "tab-1", "@e1", link], { env, fetch, stdout: sink() })).rejects.toThrow();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not disclose selected local paths when a file cannot be read", async () => {
+    const missing = `${await connectionFile()}.missing-private-bundle.aab`;
+    const stderr = sink();
+    const fetch = vi.fn();
+    expect(await main(["upload", "tab-1", "@e1", missing], { env, fetch, stderr })).toBe(1);
+    expect(stderr.text()).not.toContain(missing);
+    expect(stderr.text()).not.toContain("missing-private-bundle");
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

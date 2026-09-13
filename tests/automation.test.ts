@@ -158,6 +158,36 @@ describe("authenticated local automation", () => {
       tab: (await response.json()).tab as BrowserState["tabs"][number],
     };
   };
+  const uploadBody = (overrides: Record<string, unknown> = {}) => ({
+    ref: "@e1",
+    files: [{ name: "listing.png", type: "image/png", data: "AAEC/w==" }],
+    ...overrides,
+  });
+  const beginUpload = async (tabId: string) => {
+    const encoded = JSON.stringify(uploadBody());
+    let client!: ReturnType<typeof httpRequest>;
+    const result = new Promise<{ status: number; data: any }>((resolve, reject) => {
+      client = httpRequest(`${base}/tabs/${tabId}/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${api.token}`,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(encoded),
+        },
+      }, (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => chunks.push(chunk));
+        response.once("end", () => resolve({
+          status: response.statusCode!,
+          data: JSON.parse(Buffer.concat(chunks).toString("utf8")),
+        }));
+      });
+      client.once("error", reject);
+      client.write(encoded.slice(0, 1));
+    });
+    await expect.poll(() => controller.contents.listenerCount("did-start-navigation")).toBeGreaterThan(0);
+    return { client, result, finish: () => client.end(encoded.slice(1)) };
+  };
   beforeEach(async () => {
     controller = new FakeController();
     api = await startAutomation(controller);
@@ -741,5 +771,197 @@ describe("authenticated local automation", () => {
     expect(controller.contents.scripts.at(-1)!.code).toContain(
       ')("scroll",{"direction":"down","pixels":600}',
     );
+  });
+
+  it("passes only selected file bytes to a fixed isolated-world action", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = { ok: true, selected: 1 };
+    const body = uploadBody({
+      files: [{ name: 'Listing "draft".png', type: "image/png", data: "AAEC/w==" }],
+    });
+    const response = await request(`/tabs/${tab.id}/upload`, "POST", body);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, selected: 1 });
+    expect(controller.contents.scripts).toHaveLength(1);
+    expect(controller.contents.scripts[0].worldId).toBe(1001);
+    expect(controller.contents.scripts[0].code).toContain(`)("upload",${JSON.stringify(body)},`);
+    expect(controller.contents.inputs).toEqual([]);
+  });
+
+  it("requires a file input ref and rejects malformed file metadata before execution", async () => {
+    const { tab } = await createPage();
+    const validFile = uploadBody().files[0];
+    const cases = [
+      { selector: 'input[type="file"]', files: [validFile] },
+      uploadBody({ selector: "#upload" }),
+      uploadBody({ ref: "@e0" }),
+      uploadBody({ files: [] }),
+      uploadBody({ files: Array(9).fill(validFile) }),
+      uploadBody({ files: [null] }),
+      uploadBody({ files: [{ ...validFile, name: "../secret.png" }] }),
+      uploadBody({ files: [{ ...validFile, name: "C:\\secret.png" }] }),
+      uploadBody({ files: [{ ...validFile, name: "." }] }),
+      uploadBody({ files: [{ ...validFile, name: "name\u0000.png" }] }),
+      uploadBody({ files: [{ ...validFile, type: "image/png\r\nOther: value" }] }),
+      uploadBody({ files: [{ ...validFile, type: "image/*" }] }),
+      ...["not base64", "AAA", "AB==", "AA==\n", "=AAA", "AA===", "AA_="].map((data) =>
+        uploadBody({ files: [{ ...validFile, data }] })),
+      uploadBody({ files: [{ name: "listing.png", type: "image/png", path: "/private/selected.png" }] }),
+    ];
+    for (const body of cases) {
+      const response = await request(`/tabs/${tab.id}/upload`, "POST", body);
+      expect(response.status, JSON.stringify(body)).toBe(400);
+    }
+    expect(controller.contents.scripts).toEqual([]);
+  });
+
+  it("keeps ordinary requests at 64 KiB and bounds the dedicated upload body", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = { ok: true, selected: 1 };
+    const data = Buffer.alloc(70000, 42).toString("base64");
+    expect((await request(`/tabs/${tab.id}/fill`, "POST", { ref: "@e1", value: data })).status).toBe(413);
+    expect((await request(`/tabs/${tab.id}/upload`, "POST", uploadBody({
+      files: [{ name: "bundle.aab", type: "application/octet-stream", data }],
+    }))).status).toBe(200);
+    const tooLarge = await new Promise<number>((resolve, reject) => {
+      const client = httpRequest(`${base}/tabs/${tab.id}/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${api.token}`,
+          "Content-Type": "application/json",
+          "Content-Length": 24 * 1024 * 1024 + 1,
+        },
+      }, (response) => {
+        response.resume();
+        resolve(response.statusCode!);
+      });
+      client.once("error", reject);
+      client.end("{}");
+    });
+    expect(tooLarge).toBe(413);
+    expect(controller.contents.scripts).toHaveLength(1);
+  });
+
+  it("rejects decoded files exceeding the aggregate limit", async () => {
+    const { tab } = await createPage();
+    const data = Buffer.alloc(8 * 1024 * 1024 + 1).toString("base64");
+    const response = await request(`/tabs/${tab.id}/upload`, "POST", uploadBody({
+      files: ["first.aab", "second.aab"].map((name) => ({ name, type: "application/octet-stream", data })),
+    }));
+    expect(response.status).toBe(413);
+    expect((await response.json()).error.code).toBe("files_too_large");
+    expect(controller.contents.scripts).toEqual([]);
+  });
+
+  it("denies uploads into personal, ungranted, and handed-off tabs", async () => {
+    const personal = controller.state.tabs[0];
+    const manual = controller.state.tabs.find((tab) => tab.spaceId === "manual-agent")!;
+    for (const tab of [personal, manual])
+      expect((await request(`/tabs/${tab.id}/upload`, "POST", uploadBody())).status).toBe(404);
+    const { space, tab } = await createPage();
+    await controller.dispatch({ type: "space:ownership", id: space.id, owner: "human" });
+    expect((await request(`/tabs/${tab.id}/upload`, "POST", uploadBody())).status).toBe(409);
+    expect(controller.accessedTabs).toEqual([]);
+    expect(controller.contents.scripts).toEqual([]);
+  });
+
+  it("preserves stale-ref failures and never falls back to another file input", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = { ok: false, code: "stale_ref", error: "Observe the current file input." };
+    const response = await request(`/tabs/${tab.id}/upload`, "POST", uploadBody());
+    expect(response.status).toBe(422);
+    expect((await response.json()).error.code).toBe("stale_ref");
+    expect(controller.contents.scripts).toHaveLength(1);
+    expect(controller.contents.inputs).toEqual([]);
+  });
+
+  it("rejects uploads when the document navigates during the incoming transfer", async () => {
+    const { tab } = await createPage();
+    const transfer = await beginUpload(tab.id);
+    try {
+      controller.contents.emit("did-start-navigation", { isMainFrame: true, isSameDocument: false });
+      transfer.finish();
+      const response = await transfer.result;
+      expect(response.status).toBe(409);
+      expect(response.data.error.code).toBe("page_changed");
+      expect(controller.contents.scripts).toEqual([]);
+    } finally {
+      transfer.client.destroy();
+    }
+  });
+
+  it("honors human takeover during the incoming transfer", async () => {
+    const { space, tab } = await createPage();
+    const transfer = await beginUpload(tab.id);
+    try {
+      await controller.dispatch({ type: "space:ownership", id: space.id, owner: "human" });
+      transfer.finish();
+      const response = await transfer.result;
+      expect(response.status).toBe(409);
+      expect(response.data.error.code).toBe("human_control");
+      expect(controller.contents.scripts).toEqual([]);
+    } finally {
+      transfer.client.destroy();
+    }
+  });
+
+  it("permits one upload transfer and releases its reservation after validation failure", async () => {
+    const { tab } = await createPage();
+    const transfer = await beginUpload(tab.id);
+    try {
+      const simultaneous = await request(`/tabs/${tab.id}/upload`, "POST", uploadBody());
+      expect(simultaneous.status).toBe(429);
+      expect((await simultaneous.json()).error.code).toBe("upload_busy");
+      controller.contents.result = { ok: false, code: "stale_ref", error: "Observe again." };
+      transfer.finish();
+      expect((await transfer.result).status).toBe(422);
+      controller.contents.result = { ok: true, selected: 1 };
+      expect((await request(`/tabs/${tab.id}/upload`, "POST", uploadBody())).status).toBe(200);
+    } finally {
+      transfer.client.destroy();
+    }
+  });
+
+  it("releases the upload reservation when its client disconnects before the body completes", async () => {
+    const { tab } = await createPage();
+    const transfer = await beginUpload(tab.id);
+    const interrupted = transfer.result.catch((error: NodeJS.ErrnoException) => error.code);
+    transfer.client.destroy();
+    expect(await interrupted).toBe("ECONNRESET");
+    controller.contents.result = { ok: true, selected: 1 };
+    await expect.poll(async () => {
+      const response = await request(`/tabs/${tab.id}/upload`, "POST", uploadBody());
+      await response.text();
+      return response.status;
+    }).toBe(200);
+    expect(controller.contents.scripts).toHaveLength(1);
+  });
+
+  it("rejects an upload if its tab's native page is replaced during transfer", async () => {
+    const { tab } = await createPage();
+    const transfer = await beginUpload(tab.id);
+    try {
+      controller.contents = new FakeContents();
+      transfer.finish();
+      const response = await transfer.result;
+      expect(response.status).toBe(409);
+      expect(response.data.error.code).toBe("page_changed");
+      expect(controller.contents.scripts).toEqual([]);
+    } finally {
+      transfer.client.destroy();
+    }
+  });
+
+  it("withholds upload results when ownership changes during page execution", async () => {
+    const { space, tab } = await createPage();
+    let finish!: (value: unknown) => void;
+    controller.contents.result = new Promise((resolve) => { finish = resolve; });
+    const pending = request(`/tabs/${tab.id}/upload`, "POST", uploadBody());
+    await expect.poll(() => controller.contents.scripts.length).toBe(1);
+    await controller.dispatch({ type: "space:ownership", id: space.id, owner: "human" });
+    finish({ ok: true, selected: 1 });
+    const response = await pending;
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("human_control");
   });
 });

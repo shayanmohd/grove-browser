@@ -13,6 +13,7 @@ export type PageOperation =
   | "snapshot"
   | "target"
   | "fill"
+  | "upload"
   | "focus"
   | "check"
   | "scroll";
@@ -146,6 +147,12 @@ export function pageOperation(
     }
     return text;
   };
+  // Sites commonly hide the actual input behind a visible upload panel. Expose
+  // its metadata only while its containing UI is visible, never in closed UI.
+  const uploadControl = (element: Element) =>
+    element instanceof HTMLInputElement && element.type === "file" &&
+    element.isConnected && !element.closest('[inert],[aria-hidden="true"]') &&
+    (visible(element) || (!!element.parentElement && visible(element.parentElement)));
   const unique = (selector: string) => {
     try {
       const matches = document.querySelectorAll(selector);
@@ -222,7 +229,7 @@ export function pageOperation(
       'a[href],button,summary,input:not([type="hidden"]),textarea,select,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="combobox"],[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]';
     const candidates = (scope.matches(query) ? [scope] : [])
       .concat(Array.from(scope.querySelectorAll(query)))
-      .filter(visible);
+      .filter((element) => visible(element) || uploadControl(element));
     let nextRef = options.firstRef;
     let remainingOptions = 100;
     let optionsTruncated = false;
@@ -279,6 +286,9 @@ export function pageOperation(
           disabled:
             element.matches(":disabled") ||
             element.getAttribute("aria-disabled") === "true",
+          ...(element instanceof HTMLInputElement && element.type === "file"
+            ? { accept: element.accept.slice(0, 256), multiple: element.multiple, hidden: !visible(element) }
+            : {}),
           ...(element instanceof HTMLSelectElement
             ? (() => {
                 const choices = Array.from(element.options).filter(
@@ -362,6 +372,36 @@ export function pageOperation(
   if (!(element instanceof Element)) return element;
   if (!(element instanceof HTMLElement))
     return failure("Element does not support this action.");
+  if (operation === "upload") {
+    if (!uploadControl(element))
+      return failure("Use a file input in the currently visible upload form.", "invalid_upload_target");
+    const input = element as HTMLInputElement;
+    if (input.matches(":disabled") || input.getAttribute("aria-disabled") === "true")
+      return failure("File input is disabled.");
+    if (input.webkitdirectory)
+      return failure("Directory uploads are not supported.");
+    const files = payload.files as { name: string; type: string; data: string }[];
+    if (!input.multiple && files.length !== 1)
+      return failure("This input accepts one file at a time.", "invalid_files");
+    const accepted = input.accept.toLowerCase().split(",").map((item) => item.trim()).filter(Boolean);
+    for (const file of files) {
+      if (accepted.length && !accepted.some((rule) =>
+        rule.startsWith(".") ? file.name.toLowerCase().endsWith(rule) :
+        rule.endsWith("/*") ? file.type.toLowerCase().startsWith(rule.slice(0, -1)) :
+        rule === file.type.toLowerCase()))
+        return failure("A file does not match this input's accepted file types.", "invalid_file_type");
+    }
+    const transfer = new DataTransfer();
+    for (const file of files) {
+      const binary = atob(file.data);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      transfer.items.add(new File([bytes], file.name, { type: file.type }));
+    }
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "files")!.set!.call(input, transfer.files);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return { ok: true, selected: files.length };
+  }
   if (!visible(element)) return failure("Element is not visible.");
   if (
     element.matches(":disabled") ||

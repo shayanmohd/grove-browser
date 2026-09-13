@@ -45,6 +45,9 @@ for (const name of targets.keys()) {
       ? "Smoke test desktop on Linux"
       : "Smoke test desktop on macOS and Windows",
     linux
+      ? "Verify native Grove identity on Linux"
+      : "Verify native Grove identity on macOS and Windows",
+    linux
       ? "Test Grove skill on Linux"
       : "Test Grove skill on macOS and Windows",
     "Package native desktop app",
