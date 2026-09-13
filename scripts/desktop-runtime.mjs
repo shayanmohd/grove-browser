@@ -27,6 +27,12 @@ export async function prepareDesktopRuntime() {
   const metadata = JSON.parse(await readFile(join(projectDirectory, "package.json"), "utf8"));
   const electronDirectory = dirname(require.resolve("electron/package.json"));
   const electronVersion = JSON.parse(await readFile(join(electronDirectory, "package.json"), "utf8")).version;
+  // Electron 44 installs its native binary lazily when this entry is loaded.
+  // Resolving package metadata alone does not prepare a fresh npm checkout.
+  const stockExecutable = require("electron");
+  const electronDist = process.platform === "darwin"
+    ? dirname(dirname(dirname(dirname(stockExecutable))))
+    : dirname(stockExecutable);
   const builderVersion = require("electron-builder/package.json").version;
   const fingerprint = createHash("sha256")
     .update(await readFile(fileURLToPath(import.meta.url)))
@@ -70,7 +76,7 @@ export async function prepareDesktopRuntime() {
         asar: false,
         npmRebuild: false,
         electronVersion,
-        electronDist: join(electronDirectory, "dist"),
+        electronDist,
         mac: { icon: join(projectDirectory, "build/icon.icns"), identity: null, hardenedRuntime: false, notarize: false },
         win: { icon: join(projectDirectory, "build/icon.ico") },
         linux: { icon: join(projectDirectory, "build/icon.png"), executableName: "grove", syncDesktopName: true },
@@ -82,8 +88,8 @@ export async function prepareDesktopRuntime() {
       ? join(outputDirectory, "Grove.app", "Contents", "Resources")
       : join(outputDirectory, "resources");
     const originalResources = process.platform === "darwin"
-      ? join(electronDirectory, "dist", "Electron.app", "Contents", "Resources")
-      : join(electronDirectory, "dist", "resources");
+      ? join(dirname(dirname(stockExecutable)), "Resources")
+      : join(electronDist, "resources");
     // Keep Electron's development entry loader so CLI arguments, Playwright,
     // process.defaultApp, and the Vite development server behave as before.
     await rm(join(resources, "app"), { recursive: true, force: true });
