@@ -111,6 +111,8 @@ Taking over blocks subsequent automation operations and prevents pending snapsho
 
 All paths are relative to `GROVE_ENDPOINT`. POST requests require `Content-Type: application/json`, including handoff with `{}`. Responses are JSON except screenshots. Errors have the shape `{ "error": { "code": "...", "message": "..." } }`.
 
+Screenshots require a shown, unminimized Grove window, including captures of background tabs. If the native window is hidden or minimized, the screenshot route returns HTTP 409 with `screenshot_unavailable`. Restore the window before retrying a capture, or use a snapshot when it provides enough information. This restriction applies to screenshots; it does not disable the space's other authorized actions.
+
 | Method | Route                  | Body or response                                                                                       |
 | ------ | ---------------------- | ------------------------------------------------------------------------------------------------------ |
 | GET    | `/health`              | Status and app version                                                                                 |

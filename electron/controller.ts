@@ -423,6 +423,14 @@ export class BrowserController {
     return this.ensureView(tab).webContents;
   }
 
+  canCapturePage(): boolean {
+    return (
+      !this.window.isDestroyed() &&
+      this.window.isVisible() &&
+      !this.window.isMinimized()
+    );
+  }
+
   private ensureView(
     tab: Tab,
     loadOptions?: Electron.LoadURLOptions,

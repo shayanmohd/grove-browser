@@ -39,6 +39,6 @@ Batch execution stops on its first failure. Earlier actions may already have cha
 
 Use only actions covered by the user's authorization. If Grove reports human control, stop actions on that space. The API cannot resume it; the user can return control in Agent studio. `handoff SPACE_ID` pauses access when the user should continue.
 
-Google sign-in was rejected in the current desktop preview. If a site rejects the browser during authentication, report the block and stop the authenticated workflow. Opening a default browser does not authenticate the Grove space.
+Use a normal desktop launch for human sign-in. Review tools can add browser automation flags that cause sites to reject authentication. If a site rejects the browser, report the block and stop that authentication attempt. Opening a default browser does not authenticate the Grove space.
 
-Snapshots cover the top document, not iframes, shadow roots, PDF internals, or canvas controls. Use `screenshot TAB_ID ./page.png` when visual inspection helps; it saves a viewport PNG and refuses to overwrite a file. Report unsupported interactions rather than silently switching to another browser or broader access.
+Snapshots cover the top document, not iframes, shadow roots, PDF internals, or canvas controls. Use `screenshot TAB_ID ./page.png` when visual inspection helps; it saves a viewport PNG and refuses to overwrite a file. Screenshots require a shown, unminimized Grove window. If `screenshot_unavailable` is returned, use a snapshot when sufficient or ask the user to restore Grove before retrying. Report unsupported interactions rather than silently switching to another browser or broader access.

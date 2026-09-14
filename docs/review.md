@@ -1,21 +1,21 @@
 # Local review of Grove 0.1.1
 
-Reviewed on September 13, 2026, on an Apple Silicon Mac running macOS 15.7.2, Node.js 24.19.0, and Electron 44.2.0. This is a development review, not an independent security certification.
+Reviewed on September 13 and 14, 2026, on an Apple Silicon Mac running macOS 15.7.2, Node.js 24.19.0, and Electron 44.2.0. This is a development review, not an independent security certification.
 
 ## Results
 
 | Check | Local result |
 | --- | --- |
 | TypeScript | Passed |
-| Unit and integration behavior tests | 134 passed |
+| Unit and integration behavior tests | 136 passed |
 | Native Electron smoke | 22 checks passed |
-| Grove skill end to end | 29 checks passed, 108 client commands |
-| Installed Grove skill | The same 29 checks passed using the installed copy |
+| Grove skill end to end | 31 checks passed, 120 client commands |
+| Installed Grove skill | All 31 checks passed using the installed copy |
 | Public sites through the skill | Example.com, MDN, and Wikipedia opened and were read successfully |
 | Desktop production compilation | Passed |
 | Web preview production compilation | Passed |
 | macOS ARM64 packaging | DMG and ZIP built successfully |
-| Packaged macOS app with installed skill | All 29 skill checks passed against `Grove.app` |
+| Packaged macOS app with installed skill | All 31 skill checks passed against `Grove.app` |
 | Native development identity | Grove bundle name, executable, menu, icon, external entry loading, and cached runtime passed |
 | Responsive interface | 12 native size/theme/panel combinations passed, down to 850 by 600 |
 | Dependency audit | No reported vulnerabilities in `npm audit` on the review date |
@@ -32,15 +32,19 @@ The [local fixture](../tests/fixtures/form-site.mjs) serves an actual form build
 
 Additional cases verify required-field validation, read-only and disabled controls, password-value omission, detached elements, refs invalidated by navigation, contenteditable input, scoped observations, asynchronous waits, timeout handling, offscreen clicks, Enter-key submission, PNG output, refusal to overwrite a screenshot, and handoff denial until explicit UI resume. A failing batch returns completed steps and stops without running later actions.
 
-Live public websites were read only. All completed test form submissions used fictional data on a temporary loopback server. The tests remove temporary profiles and connection files. Generated results are in ignored `artifacts/review`; no live credentials or personal profile data belong in the repository. The attempted live Play Console workflow stopped when Google rejected sign-in in Grove. No app was created or uploaded, and no end-to-end token comparison was completed.
+All confirmed test form submissions used fictional data on a temporary loopback server. A public HTTP echo form was also filled and its submit control clicked, but the expected receipt was not observed. That attempt is not counted as a successful submission and was not replayed. The tests remove temporary profiles and connection files. Generated results are in ignored `artifacts/review`; no live credentials or personal profile data belong in the repository. The attempted live Play Console workflow stopped when Google rejected sign-in in Grove. No app was created or uploaded through Grove, and no end-to-end token comparison was completed.
 
 ## Branding, interface, and file selection
 
 Source launches now prepare and reuse a native Grove runtime rather than opening the stock development executable. The installed Electron distribution stays intact. macOS uses the Grove bundle and Dock icon, Windows has an explicit application identity and icon, and Linux uses consistent desktop metadata. The branding test verifies the native executable, platform metadata, launch from a different working directory, and preserved development entry behavior. Native CI runs this check on each supported target.
 
+The normal source-startup regression launches Grove directly, without Playwright, and verifies its own browser identity, enabled cookies, and `navigator.webdriver === false` using a local diagnostic page. This checks launch behavior, not successful authentication with a provider.
+
 Home now centers on its search, shortcuts, and actual recent pages. Repeated promotional copy, duplicate shortcut actions, redundant profile/status strips, and the extra agent card were removed. Agent setup details and activity use keyboard accessible disclosures. Native screenshots were checked at 1280 by 800, 980 by 700, and 850 by 600 in both themes with Home and Agent studio. There was no horizontal overflow, and all smaller-window content remained reachable by scrolling. README images were refreshed from the running desktop app.
 
 The skill now selects files through a dedicated bounded upload route. The native suite sends a binary bundle larger than the normal API body limit and two image files, including a Unicode filename, through a real multipart POST. It verifies every received byte and exactly one receipt. It also checks hidden file inputs in visible upload UI, selected-filename omission, stale refs, disabled inputs, accepted types, and single-file constraints. Focused API and client regressions cover ownership during transfers, navigation, replaced pages, concurrency, interrupted transfers, base64 validation, size limits, and local-path privacy. Selection uses File and DataTransfer objects; a site can still require an unsupported native chooser interaction.
+
+Native capture stalled when the Grove window was minimized or hidden. The screenshot route now returns immediate restoration guidance for those states and a specific error for native rendering failures. The installed-skill regression verifies continued background actions, preserved window and tab selection, and valid PNG capture after restoration. Separate local form probes also verified exactly one creation and response while minimized and hidden. Capture requires a shown, unminimized window.
 
 ## Fixes made during review
 
@@ -69,7 +73,9 @@ The dependency review upgraded Vitest to 4.1.11 to address [GHSA-82fw-gwwq-j7x9]
 
 ## Google sign-in compatibility
 
-A real Play Console sign-in attempt reached Google's rejected-browser page before the Console could load. Google documents that embedded and automated browsers may be blocked. This remains a compatibility limit of the current desktop engine. Grove now shows a concise notice with an explicit default-browser button on the rejection page. The button opens a fixed public Google destination, drops authentication query parameters, and transfers no cookies or credentials. Signing in there does not authenticate a Grove space. The API cannot invoke this external handoff. See [Google's supported-browser guidance](https://support.google.com/accounts/answer/7675428?co=GENIE.Platform%3DDesktop&hl=en).
+The first Play Console sign-in attempt reached Google's rejected-browser page before the Console could load. Further diagnostics found that the Playwright review launcher set `navigator.webdriver` to `true`. The same Grove runtime launched normally reported `false`, with cookies enabled and matching Chromium client hints. Normal authenticated compatibility therefore needs a separate human sign-in test; the initial rejection does not establish that every normal Grove launch fails.
+
+Grove uses Electron WebContentsView, and some providers can reject embedded or automation-launched browsers. A rejection-page notice offers an explicit default-browser button. It opens a fixed public Google destination, drops authentication query parameters, and transfers no cookies or credentials. Signing in there does not authenticate a Grove space, and the agent API cannot invoke the external handoff. See [Google's supported-browser guidance](https://support.google.com/accounts/answer/7675428?co=GENIE.Platform%3DDesktop&hl=en). No successful Play Console upload or complete task-token comparison has been recorded yet.
 
 ## Token measurements and limits
 

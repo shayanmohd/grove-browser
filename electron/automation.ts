@@ -18,6 +18,7 @@ export interface AutomationController {
   dispatch(action: BrowserAction): Promise<BrowserState>;
   createAgentSpace(name: string): Space;
   getWebContents(tabId: string): WebContents | undefined;
+  canCapturePage(): boolean;
   addActivity(
     spaceId: string | undefined,
     message: string,
@@ -960,10 +961,29 @@ export async function startAutomation(
         return send(response, 200, { ok: true, results });
       }
       if (parts.length === 3 && parts[2] === "screenshot" && method === "GET") {
+        const requireCaptureWindow = () => {
+          if (!controller.canCapturePage())
+            return fail(
+              409,
+              "screenshot_unavailable",
+              "Restore or show the Grove window to capture a screenshot. Snapshots and page actions remain available while it is minimized or hidden.",
+            );
+        };
+        requireCaptureWindow();
         const contents = await readyContents(tab.id);
+        requireCaptureWindow();
         const screenshot = await bounded(
           contents.capturePage(undefined, { stayHidden: true }),
-        );
+        ).catch((error: unknown) => {
+          authorizeTab(tab.id);
+          requireCaptureWindow();
+          if (error instanceof ApiError) throw error;
+          return fail(
+            503,
+            "screenshot_failed",
+            "The page could not render a screenshot. Read a snapshot or try again after the page finishes rendering.",
+          );
+        });
         authorizeTab(tab.id);
         if (screenshot.isEmpty())
           return fail(

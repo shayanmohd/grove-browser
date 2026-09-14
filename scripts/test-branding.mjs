@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
+import { createServer } from "node:http";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -62,4 +64,95 @@ try {
 } finally {
   await app?.close();
   await rm(profile, { recursive: true, force: true });
+}
+
+function childIsRunning(child) {
+  return Boolean(child?.pid && child.exitCode === null && child.signalCode === null);
+}
+
+function waitForChildExit(child, timeoutMs) {
+  if (!childIsRunning(child)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = (exited) => {
+      clearTimeout(timer);
+      child.removeListener("exit", onExit);
+      resolve(exited);
+    };
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    child.once("exit", onExit);
+  });
+}
+
+async function stopChild(child, timeoutMs = 3000) {
+  if (!childIsRunning(child)) return;
+  child.kill();
+  if (await waitForChildExit(child, timeoutMs)) return;
+  child.kill("SIGKILL");
+  if (!(await waitForChildExit(child, timeoutMs)))
+    throw new Error("Normal Grove startup did not stop after forced termination");
+}
+
+// Authentication compatibility must also exercise ordinary source startup.
+// Playwright adds a debugging flag that changes navigator.webdriver in pages.
+const normalProfile = await mkdtemp(join(tmpdir(), "grove-normal-launch-"));
+let report;
+let rejectReport;
+let timer;
+let child;
+const observed = new Promise((resolve, reject) => {
+  report = resolve;
+  rejectReport = reject;
+});
+const fixture = createServer(async (request, response) => {
+  if (request.url === "/report") {
+    try {
+      const chunks = [];
+      let size = 0;
+      for await (const chunk of request) {
+        size += chunk.length;
+        if (size > 4096) throw new Error("Oversized diagnostic report");
+        chunks.push(chunk);
+      }
+      report(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      response.end("ok");
+    } catch (error) {
+      rejectReport(error);
+      response.writeHead(400).end();
+    }
+    return;
+  }
+  response.setHeader("Content-Type", "text/html");
+  response.end('<h1>Grove startup check</h1><script>fetch("/report",{method:"POST",body:JSON.stringify({webdriver:navigator.webdriver,userAgent:navigator.userAgent,cookies:navigator.cookieEnabled})});</script>');
+});
+try {
+  fixture.listen(0, "127.0.0.1");
+  await once(fixture, "listening");
+  const url = `http://127.0.0.1:${fixture.address().port}/`;
+  await writeFile(join(normalProfile, "browser-state.json"), JSON.stringify({
+    spaces: [{ id: "probe", name: "Startup check", kind: "personal", color: "green", createdAt: Date.now() }],
+    tabs: [{ id: "probe-tab", spaceId: "probe", title: "Startup check", url }],
+    activeSpaceId: "probe", activeTabId: "probe-tab", settings: { restoreSession: true },
+  }));
+  const launch = desktopLaunch("start", executable, { ...process.env, GROVE_USER_DATA: normalProfile });
+  child = spawn(launch.executable, launch.args, { ...launch.options, stdio: "ignore" });
+  child.once("error", rejectReport);
+  child.once("exit", (code, signal) => rejectReport(new Error(
+    `Normal Grove startup exited before reporting browser capabilities (${signal ? `signal ${signal}` : `code ${code}`})`,
+  )));
+  timer = setTimeout(() => rejectReport(new Error("Normal startup did not report its browser capabilities")), 20000);
+  const capabilities = await observed;
+  assert.equal(capabilities.webdriver, false);
+  assert.equal(capabilities.cookies, true);
+  assert.match(capabilities.userAgent, /Grove\//);
+  console.log("PASS normal Grove source startup identifies itself and does not enable WebDriver");
+} finally {
+  clearTimeout(timer);
+  fixture.close();
+  fixture.closeAllConnections();
+  try {
+    await stopChild(child);
+  } finally {
+    await rm(normalProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
 }

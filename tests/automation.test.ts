@@ -13,6 +13,8 @@ import type { BrowserAction, BrowserState, Space } from "../shared/types";
 
 class FakeContents extends EventEmitter {
   scripts: { worldId: number; code: string }[] = [];
+  captureCalls = 0;
+  captureError?: Error;
   inputs: { method: string; parameters: Record<string, unknown> }[] = [];
   afterInput?: () => void;
   private attached = false;
@@ -59,6 +61,8 @@ class FakeContents extends EventEmitter {
       : this.result;
   }
   async capturePage() {
+    this.captureCalls += 1;
+    if (this.captureError) throw this.captureError;
     return {
       isEmpty: () => false,
       toPNG: () => Buffer.from([137, 80, 78, 71]),
@@ -70,6 +74,7 @@ class FakeController implements AutomationController {
   contents = new FakeContents();
   calls: BrowserAction[] = [];
   accessedTabs: string[] = [];
+  captureAvailable = true;
   constructor() {
     this.state.spaces.push({
       id: "manual-agent",
@@ -97,6 +102,9 @@ class FakeController implements AutomationController {
   getWebContents(id: string) {
     this.accessedTabs.push(id);
     return this.contents as unknown as WebContents;
+  }
+  canCapturePage() {
+    return this.captureAvailable;
   }
   addActivity() {}
   async dispatch(action: BrowserAction) {
@@ -300,6 +308,39 @@ describe("authenticated local automation", () => {
       type: "tab:create",
       background: true,
       spaceId: space.id,
+    });
+  });
+
+  it("rejects unavailable screenshots before capture while allowing snapshots, then recovers", async () => {
+    const { tab } = await createPage();
+    controller.captureAvailable = false;
+    const unavailable = await request(`/tabs/${tab.id}/screenshot`);
+    expect(unavailable.status).toBe(409);
+    expect(await unavailable.json()).toMatchObject({
+      error: {
+        code: "screenshot_unavailable",
+        message: expect.stringContaining("Restore or show the Grove window"),
+      },
+    });
+    expect(controller.contents.captureCalls).toBe(0);
+    expect((await request(`/tabs/${tab.id}/snapshot`)).status).toBe(200);
+    controller.captureAvailable = true;
+    const restored = await request(`/tabs/${tab.id}/screenshot`);
+    expect(restored.status).toBe(200);
+    expect(restored.headers.get("content-type")).toBe("image/png");
+    expect(controller.contents.captureCalls).toBe(1);
+  });
+
+  it("reports a rendering failure without leaking native capture errors", async () => {
+    const { tab } = await createPage();
+    controller.contents.captureError = new Error("UnknownVizError internal details");
+    const response = await request(`/tabs/${tab.id}/screenshot`);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "screenshot_failed",
+        message: "The page could not render a screenshot. Read a snapshot or try again after the page finishes rendering.",
+      },
     });
   });
 

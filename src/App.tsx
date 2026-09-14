@@ -534,11 +534,11 @@ export default function App() {
           <section
             className="sign-in-notice"
             role="status"
-            aria-label="Google sign-in unavailable"
+            aria-label="Google sign-in rejected"
           >
             <WarningCircle size={20} />
             <div>
-              <strong>Google sign-in is unavailable in this preview.</strong>
+              <strong>Google rejected this sign-in.</strong>
               <p>
                 Continue in your default browser; this will not sign you into
                 Grove.

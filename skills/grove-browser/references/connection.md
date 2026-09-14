@@ -2,6 +2,8 @@
 
 The desktop app must be running. Open **Agent studio**, enable its local connection, then choose **Copy connection details**. The web preview has no automation service. The endpoint and token rotate whenever the API restarts.
 
+For human authentication, launch the installed Grove app or use `npm start` from a built source checkout. Grove's local API does not require a browser debugging port. Review harnesses such as Playwright can add automation flags: the initial Google sign-in test exposed WebDriver, while a normal desktop launch did not. Do not use a review harness to judge normal sign-in compatibility.
+
 Use either:
 
 - `GROVE_ENDPOINT` and `GROVE_TOKEN` supplied through the process environment or a secret manager.

@@ -1,4 +1,4 @@
-import { waitForState } from "./wait.mjs";
+import { poll, waitForState } from "./wait.mjs";
 import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -319,6 +319,55 @@ try {
   passed(
     "viewport screenshots contain a real PNG and do not overwrite existing files",
   );
+  // Xvfb CI has no window manager to acknowledge native minimization.
+  // Hidden-window behavior is covered on every platform.
+  const unavailableModes = process.platform === "linux"
+    ? ["hidden"]
+    : ["minimized", "hidden"];
+  for (const mode of unavailableModes) {
+    await browser.evaluate(({ BrowserWindow }, mode) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (mode === "minimized") window.minimize();
+      else window.hide();
+    }, mode);
+    const windowUnavailable = () => browser.evaluate(({ BrowserWindow }, mode) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      return mode === "minimized" ? window.isMinimized() : !window.isVisible();
+    }, mode);
+    await poll(windowUnavailable, { timeoutMs: 5000, label: `${mode} window` });
+    const captureStarted = Date.now();
+    const unavailable = await cli(
+      ["screenshot", tab.id, join(temporary, `${mode}.png`)],
+      undefined,
+      { failure: true },
+    );
+    assert.match(unavailable.errors, /409 screenshot_unavailable/);
+    assert.match(unavailable.errors, /Restore or show the Grove window/);
+    assert.ok(Date.now() - captureStarted < 5000, "Unavailable capture must fail before its 15-second rendering timeout");
+    await json(["navigate", tab.id, `${fixture.origin}/lab`]);
+    const background = await observe(tab.id);
+    await cli(["click", tab.id, ref(background, "Show delayed result")]);
+    await cli(["wait", tab.id, "--stdin"], {
+      selector: "#delayed-result",
+      text: "Delayed content ready",
+      timeoutMs: 5000,
+    });
+    assert.equal(await windowUnavailable(), true);
+    assert.equal((await chrome.evaluate(() => window.grove.getState())).activeTabId, original);
+    await browser.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      if (window.isMinimized()) window.restore();
+      window.show();
+    });
+    await poll(() => browser.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      return window.isVisible() && !window.isMinimized();
+    }), { timeoutMs: 5000, label: "restored window" });
+    const restoredPNG = join(temporary, `${mode}-restored.png`);
+    await cli(["screenshot", tab.id, restoredPNG]);
+    assert.deepEqual([...(await readFile(restoredPNG)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    passed(`${mode} capture returns restoration guidance while native actions work, then captures after restore`);
+  }
   await cli(["handoff", space.id]);
   await cli(["snapshot", tab.id], undefined, { failure: true });
   await cli(["click", tab.id, "#enter-result"], undefined, { failure: true });
