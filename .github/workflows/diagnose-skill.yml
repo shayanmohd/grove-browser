@@ -1,0 +1,55 @@
+name: Diagnose skill flake
+
+on:
+  push:
+    branches: ["diagnose/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  skill:
+    name: macOS Apple Silicon shard ${{ matrix.shard }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compile desktop app
+        run: npm run build
+      - name: Verify native Grove identity
+        run: npm run test:branding
+      - name: Repeat desktop smoke and skill tests with diagnostics
+        run: |
+          mkdir -p diagnostics
+          failures=0
+          for run in $(seq 1 12); do
+            npm run test:desktop > "diagnostics/smoke-$run.log" 2>&1 || echo "::warning::smoke run $run failed"
+            if ! GROVE_DIAGNOSTICS_DIR="diagnostics/skill-$run" npm run test:skill > "diagnostics/skill-$run.log" 2>&1; then
+              failures=$((failures + 1))
+              echo "::error::skill run $run failed"
+              tail -n 20 "diagnostics/skill-$run.log"
+            fi
+          done
+          echo "Skill failures: $failures of 12"
+          test "$failures" -eq 0
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-diagnostics-${{ matrix.shard }}
+          path: diagnostics
+          retention-days: 7

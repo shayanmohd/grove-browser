@@ -1,9 +1,9 @@
 import { poll, waitForState } from "./wait.mjs";
 import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { loadavg, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron as electron } from "playwright";
 import { startFormSite } from "../tests/fixtures/form-site.mjs";
@@ -27,11 +27,112 @@ let browser;
 let chrome;
 const artifacts = resolve("artifacts/review");
 await mkdir(artifacts, { recursive: true });
+// Opt-in evidence for intermittent CI failures: records where native input and
+// navigation stop without changing the automation under test.
+const diagnostics = process.env.GROVE_DIAGNOSTICS_DIR
+  ? resolve(process.env.GROVE_DIAGNOSTICS_DIR)
+  : null;
+if (diagnostics) await mkdir(diagnostics, { recursive: true });
+const PAGE_RECORDER = `(() => {
+  if (window.__groveDiagnostics) return;
+  window.__groveDiagnostics = true;
+  for (const type of ["pointerdown", "mousedown", "mouseup", "click", "submit", "pagehide"])
+    addEventListener(type, (event) => {
+      try {
+        const entries = JSON.parse(sessionStorage.getItem("__groveDiagnostics") || "[]");
+        const target = event.target;
+        entries.push({ type, at: Math.round(performance.timeOrigin + event.timeStamp), trusted: event.isTrusted, target: target?.id ? "#" + target.id : target?.nodeName, x: event.clientX, y: event.clientY, path: location.pathname });
+        sessionStorage.setItem("__groveDiagnostics", JSON.stringify(entries.slice(-200)));
+      } catch {}
+    }, { capture: true, passive: true });
+})()`;
+const PAGE_STATE = `(() => {
+  const rectangle = (selector) => document.querySelector(selector)?.getBoundingClientRect().toJSON() ?? null;
+  let received = [];
+  try { received = JSON.parse(sessionStorage.getItem("__groveDiagnostics") || "[]"); } catch {}
+  return {
+    href: location.href, title: document.title, readyState: document.readyState,
+    visibility: document.visibilityState, focused: document.hasFocus(),
+    devicePixelRatio, viewport: [innerWidth, innerHeight], scroll: [scrollX, scrollY],
+    text: (document.body?.innerText || "").slice(0, 600),
+    responseForm: rectangle("#response-form"), createButton: rectangle("#create-submit"),
+    paints: performance.getEntriesByType("paint").map((entry) => entry.name + ":" + Math.round(entry.startTime)),
+    timeOrigin: Math.round(performance.timeOrigin),
+    received,
+  };
+})()`;
+function installRecorder({ app, webContents }, pageRecorder) {
+  const events = (globalThis.__groveDiagnostics = []);
+  const record = (contents, type, detail) => {
+    events.push({ at: Date.now(), contents: contents.id, type, ...detail });
+    if (events.length > 3000) events.splice(0, events.length - 3000);
+  };
+  const watch = (contents) => {
+    for (const type of ["did-start-loading", "did-stop-loading", "dom-ready", "did-finish-load", "unresponsive", "responsive", "focus", "blur", "destroyed"])
+      contents.on(type, () => record(contents, type));
+    contents.on("render-process-gone", (_event, details) => record(contents, "render-process-gone", { reason: details.reason }));
+    contents.on("did-start-navigation", (details) => record(contents, "did-start-navigation", { url: details.url, mainFrame: details.isMainFrame, sameDocument: details.isSameDocument }));
+    contents.on("did-redirect-navigation", (details) => record(contents, "did-redirect-navigation", { url: details.url, mainFrame: details.isMainFrame }));
+    contents.on("did-navigate", (_event, url, code) => record(contents, "did-navigate", { url, code }));
+    contents.on("did-fail-load", (_event, code, description, url, mainFrame) => record(contents, "did-fail-load", { code, description, url, mainFrame }));
+    contents.on("before-mouse-event", (_event, input) => record(contents, "before-mouse-event", { input: input.type, x: input.x, y: input.y }));
+    contents.on("input-event", (_event, input) => {
+      if (input.type !== "mouseMove") record(contents, "input-event", { input: input.type });
+    });
+    contents.on("dom-ready", () => {
+      if (/^https?:/.test(contents.getURL())) contents.executeJavaScript(pageRecorder).catch(() => {});
+    });
+  };
+  webContents.getAllWebContents().forEach(watch);
+  app.on("web-contents-created", (_event, contents) => watch(contents));
+}
+let diagnosticIndex = 0;
+async function captureDiagnostics(error) {
+  const report = {
+    at: Date.now(),
+    error: String(error?.stack || error),
+    load: loadavg(),
+    calls: calls.slice(-12),
+    requests: fixture.requests.slice(-40),
+    fixtureEvents: fixture.events,
+  };
+  if (browser)
+    report.browser = await Promise.race([
+      browser.evaluate(async ({ BrowserWindow, screen, webContents }, pageState) => {
+        const bounded = (promise) => Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve("page state timed out"), 3000))]);
+        return {
+          windows: BrowserWindow.getAllWindows().map((window) => ({
+            bounds: window.getBounds(), visible: window.isVisible(), focused: window.isFocused(), minimized: window.isMinimized(),
+            views: window.contentView.children.map((view) => ({ bounds: view.getBounds(), visible: view.getVisible?.(), url: view.webContents?.getURL() })),
+          })),
+          displays: screen.getAllDisplays().map((display) => ({ scaleFactor: display.scaleFactor, bounds: display.bounds })),
+          pages: await Promise.all(webContents.getAllWebContents().filter((contents) => /^https?:/.test(contents.getURL())).map(async (contents) => ({
+            contents: contents.id, url: contents.getURL(), loading: contents.isLoading(), loadingMainFrame: contents.isLoadingMainFrame(),
+            crashed: contents.isCrashed(), debuggerAttached: contents.debugger.isAttached(),
+            history: contents.navigationHistory.getAllEntries().map((entry) => entry.url), activeIndex: contents.navigationHistory.getActiveIndex(),
+            page: await bounded(contents.executeJavaScript(pageState)).catch((reason) => String(reason)),
+          }))),
+          events: globalThis.__groveDiagnostics?.slice(-400) ?? [],
+        };
+      }, PAGE_STATE),
+      new Promise((resolve) => setTimeout(() => resolve("browser state timed out"), 10000)),
+    ]).catch((reason) => String(reason));
+  if (process.platform === "darwin")
+    report.processes = await new Promise((resolve) =>
+      execFile("ps", ["-Aco", "pid,pcpu,pmem,comm", "-r"], (failure, output) =>
+        resolve(failure ? String(failure) : output.split("\n").slice(0, 16)),
+      ),
+    );
+  const file = join(diagnostics, `failure-${++diagnosticIndex}.json`);
+  await writeFile(file, JSON.stringify(report, null, 2));
+  console.error(`Diagnostics written to ${file}`);
+}
 function passed(name) {
   checks.push(name);
   console.log(`PASS ${name}`);
 }
 async function cli(args, input, options = {}) {
+  const started = Date.now();
   const result = await new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [client, ...args], {
       env: environment,
@@ -66,6 +167,8 @@ async function cli(args, input, options = {}) {
     command: args[0],
     code: result.code,
     outputCharacters: result.output.length,
+    started,
+    milliseconds: Date.now() - started,
   });
   if (!options.failure)
     assert.equal(
@@ -103,6 +206,7 @@ try {
     args: process.env.GROVE_EXECUTABLE ? [] : [resolve("out/main/index.js")],
     env: environment,
   });
+  if (diagnostics) await browser.evaluate(installRecorder, PAGE_RECORDER);
   chrome = await browser.firstWindow();
   await chrome.waitForSelector(".home-intro");
   await chrome.evaluate(() =>
@@ -586,7 +690,13 @@ try {
   console.log(
     `Skill end-to-end passed: ${checks.length} checks, ${calls.length} client commands, one form and one response created.`,
   );
+} catch (error) {
+  if (diagnostics)
+    await captureDiagnostics(error).catch((reason) => console.error(reason));
+  throw error;
 } finally {
+  if (diagnostics)
+    await writeFile(join(diagnostics, "calls.json"), JSON.stringify(calls, null, 2)).catch(() => {});
   if (browser) await browser.close().catch(() => {});
   await fixture.close();
   await rm(temporary, {
