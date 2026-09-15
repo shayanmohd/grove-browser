@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5]
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
@@ -36,7 +36,7 @@ jobs:
         run: |
           mkdir -p diagnostics
           failures=0
-          for run in $(seq 1 12); do
+          for run in $(seq 1 15); do
             npm run test:desktop > "diagnostics/smoke-$run.log" 2>&1 || echo "::warning::smoke run $run failed"
             if ! GROVE_DIAGNOSTICS_DIR="diagnostics/skill-$run" npm run test:skill > "diagnostics/skill-$run.log" 2>&1; then
               failures=$((failures + 1))
@@ -44,7 +44,7 @@ jobs:
               tail -n 20 "diagnostics/skill-$run.log"
             fi
           done
-          echo "Skill failures: $failures of 12"
+          echo "Skill failures: $failures of 15"
           test "$failures" -eq 0
       - name: Upload diagnostics
         if: always()

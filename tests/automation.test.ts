@@ -691,6 +691,47 @@ describe("authenticated local automation", () => {
       ).toBe(400);
   });
 
+  it("repeats native input the page never received and reports one that never arrives", async () => {
+    const { tab } = await createPage();
+    // A page drops native input until it renders a frame after a navigation.
+    const page = (received: number) => (code: string) =>
+      code.includes(')("input",')
+        ? { ok: true, mouse: controller.contents.inputs.filter((input) => input.parameters.type === "mousePressed").length > received ? 1 : 0, key: 0 }
+        : { ok: true, x: 25, y: 45 };
+    controller.contents.result = page(1);
+    expect(
+      (await request(`/tabs/${tab.id}/click`, "POST", { ref: "@e1" })).status,
+    ).toBe(200);
+    expect(
+      controller.contents.inputs.map((input) => input.parameters.type),
+    ).toEqual([
+      "mouseMoved",
+      "mousePressed",
+      "mouseReleased",
+      "mouseMoved",
+      "mousePressed",
+      "mouseReleased",
+    ]);
+    expect(
+      controller.contents.scripts.some((script) =>
+        script.code.includes(')("frame",'),
+      ),
+    ).toBe(true);
+    controller.contents.inputs = [];
+    controller.contents.result = page(Number.POSITIVE_INFINITY);
+    const response = await request(`/tabs/${tab.id}/click`, "POST", {
+      ref: "@e1",
+    });
+    expect(response.status).toBe(409);
+    expect((await response.json()).error.code).toBe("input_not_delivered");
+    expect(
+      controller.contents.inputs.filter(
+        (input) => input.parameters.type === "mousePressed",
+      ),
+    ).toHaveLength(3);
+    expect(controller.contents.debugger.isAttached()).toBe(false);
+  });
+
   it("checks ownership immediately before each native input event", async () => {
     const { tab, space } = await createPage();
     controller.contents.result = { ok: true, x: 25, y: 45 };

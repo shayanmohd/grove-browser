@@ -695,8 +695,13 @@ try {
     await captureDiagnostics(error).catch((reason) => console.error(reason));
   throw error;
 } finally {
-  if (diagnostics)
+  if (diagnostics) {
     await writeFile(join(diagnostics, "calls.json"), JSON.stringify(calls, null, 2)).catch(() => {});
+    const events = browser
+      ? await browser.evaluate(() => globalThis.__groveDiagnostics ?? []).catch(() => [])
+      : [];
+    await writeFile(join(diagnostics, "events.json"), JSON.stringify(events, null, 2)).catch(() => {});
+  }
   if (browser) await browser.close().catch(() => {});
   await fixture.close();
   await rm(temporary, {
