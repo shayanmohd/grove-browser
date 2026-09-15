@@ -10,9 +10,11 @@ export async function startFormSite() {
   const forms = new Map();
   const submissions = [];
   const events = [];
+  const requests = [];
   const csrf = randomUUID();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
+    requests.push({ at: Date.now(), method: request.method, path: url.pathname });
     const send = (title, body, script = '', status = 200) => {
       response.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       response.end(document(title, body, script));
@@ -80,5 +82,5 @@ export async function startFormSite() {
     } catch { return send('Request failed', '<h1>Request failed</h1>', '', 400); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { origin: `http://127.0.0.1:${server.address().port}`, forms, submissions, events, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
+  return { origin: `http://127.0.0.1:${server.address().port}`, forms, submissions, events, requests, close: () => new Promise(resolve => { server.close(resolve); server.closeAllConnections(); }) };
 }
