@@ -16,7 +16,9 @@ export type PageOperation =
   | "upload"
   | "focus"
   | "check"
-  | "scroll";
+  | "scroll"
+  | "input"
+  | "frame";
 
 // This complete function is serialized into a separate Chromium world. It has no
 // imports, Node APIs, or access to the browser interface's preload bridge.
@@ -358,6 +360,25 @@ export function pageOperation(
             document.readyState !== "loading",
     };
   }
+  if (operation === "input") {
+    // Chromium drops native input that a page receives before it renders its
+    // first frame after a navigation, so the caller counts what arrived.
+    const world = globalThis as unknown as {
+      groveInput?: { mouse: number; key: number };
+    };
+    if (!world.groveInput) {
+      const counts = (world.groveInput = { mouse: 0, key: 0 });
+      addEventListener("mousedown", () => { counts.mouse += 1; }, { capture: true });
+      addEventListener("keydown", () => { counts.key += 1; }, { capture: true });
+    }
+    return { ok: true, ...world.groveInput };
+  }
+  if (operation === "frame")
+    return new Promise((resolve) =>
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => resolve({ ok: true })),
+      ),
+    );
   if (operation === "scroll") {
     const direction = payload.direction as string;
     const pixels = payload.pixels as number;

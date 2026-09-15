@@ -567,6 +567,43 @@ export async function startAutomation(
     }
     authorizeTab(id);
   };
+  // Chromium reports a successful dispatch for native input that it drops while a
+  // page has not rendered a frame since its last navigation. Confirm the page
+  // received the input and repeat only input that provably never arrived.
+  const deliverNativeInput = async (
+    id: string,
+    contents: WebContents,
+    kind: "mouse" | "key",
+    commands: Parameters<typeof nativeInput>[2],
+    deadline: number,
+    epoch: number,
+  ) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const armed = await evaluatePage(id, contents, "input", {}, deadline);
+      await nativeInput(id, contents, commands, deadline, epoch);
+      // Input that already changed the page was delivered.
+      if (trackContents(contents).epoch !== epoch) return;
+      const received = await evaluatePage(id, contents, "input", {}, deadline);
+      const before = armed[kind];
+      const after = received[kind];
+      // Repeat input only on positive evidence that the page never received it.
+      if (typeof before !== "number" || typeof after !== "number" || after > before)
+        return;
+      if (attempt >= 2)
+        return fail(
+          409,
+          "input_not_delivered",
+          "The page did not accept native input. Inspect the page before retrying.",
+        );
+      await evaluatePage(
+        id,
+        contents,
+        "frame",
+        {},
+        Math.min(deadline, Date.now() + 2000),
+      ).catch(() => {});
+    }
+  };
   const executeToolAction = async (
     id: string,
     action: ToolAction,
@@ -617,9 +654,10 @@ export async function startAutomation(
           "invalid_target",
           "The page did not provide a valid click target.",
         );
-      await nativeInput(
+      await deliverNativeInput(
         id,
         contents,
+        "mouse",
         [
           {
             method: "Input.dispatchMouseEvent",
@@ -667,9 +705,10 @@ export async function startAutomation(
         nativeVirtualKeyCode: key.keyCode,
         ...(key.text ? { text: key.text, unmodifiedText: key.text } : {}),
       };
-      await nativeInput(
+      await deliverNativeInput(
         id,
         contents,
+        "key",
         [
           {
             method: "Input.dispatchKeyEvent",
