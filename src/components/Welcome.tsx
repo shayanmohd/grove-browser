@@ -103,6 +103,7 @@ export function ImportPanel({
           <button
             type="button"
             className="primary-button"
+            autoFocus
             onClick={() => onDone(null)}
           >
             {importCopy.continue} <ArrowRight size={16} />
@@ -202,6 +203,7 @@ export function ImportPanel({
         <button
           type="submit"
           className="primary-button"
+          autoFocus
           disabled={busy || !chosen || (!bookmarks && !history)}
         >
           {busy ? importCopy.working : importCopy.import}
@@ -236,6 +238,7 @@ export function Welcome({
         importing ? welcomeCopy.description : welcomeCopy.signInDescription
       }
       className="welcome-modal"
+      autoFocus={false}
     >
       {importing ? (
         <ImportPanel

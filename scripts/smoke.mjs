@@ -3,9 +3,10 @@ import { prepareDesktopRuntime } from "./desktop-runtime.mjs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { existsSync, statSync } from "node:fs";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { _electron as electron } from "playwright";
 import {
   resolveSocket,
@@ -36,7 +37,62 @@ const checked = (message) => {
   checks++;
   console.log(`PASS ${message}`);
 };
-const env = { ...process.env, KAMAPATHY_USER_DATA: profile };
+// A home folder with another browser's data in it, so the welcome dialog has
+// something real to import.
+const home = join(profile, "home");
+const chromeData = join(
+  home,
+  process.platform === "darwin"
+    ? "Library/Application Support/Google/Chrome"
+    : process.platform === "win32"
+      ? "Google/Chrome/User Data"
+      : ".config/google-chrome",
+);
+await mkdir(join(chromeData, "Default"), { recursive: true });
+await writeFile(
+  join(chromeData, "Local State"),
+  JSON.stringify({
+    profile: { info_cache: { Default: { name: "Person 1" } }, last_used: "Default" },
+  }),
+);
+await writeFile(
+  join(chromeData, "Default", "Bookmarks"),
+  JSON.stringify({
+    roots: {
+      bookmark_bar: {
+        type: "folder",
+        children: [
+          { type: "url", name: "Docs", url: "https://docs.example/" },
+          { type: "url", name: "Mail", url: "https://mail.example/inbox" },
+        ],
+      },
+      other: { type: "folder", children: [] },
+      synced: { type: "folder", children: [] },
+    },
+    version: 1,
+  }),
+);
+{
+  const history = new DatabaseSync(join(chromeData, "Default", "History"));
+  history.exec(
+    "CREATE TABLE urls(id INTEGER PRIMARY KEY AUTOINCREMENT, url LONGVARCHAR, title LONGVARCHAR, visit_count INTEGER DEFAULT 0 NOT NULL, typed_count INTEGER DEFAULT 0 NOT NULL, last_visit_time INTEGER NOT NULL, hidden INTEGER DEFAULT 0 NOT NULL)",
+  );
+  const chromeTime = (millis) => (millis + 11644473600000) * 1000;
+  const insert = history.prepare(
+    "INSERT INTO urls (url, title, visit_count, last_visit_time, hidden) VALUES (?, ?, ?, ?, 0)",
+  );
+  insert.run("https://docs.example/plan", "The plan", 5, chromeTime(Date.now() - 60000));
+  insert.run("https://mail.example/inbox", "Inbox", 3, chromeTime(Date.now() - 120000));
+  insert.run("https://shop.example/", "Shop", 1, chromeTime(Date.now() - 180000));
+  history.close();
+}
+const env = {
+  ...process.env,
+  KAMAPATHY_USER_DATA: profile,
+  ...(process.platform === "win32"
+    ? { USERPROFILE: home, LOCALAPPDATA: home, APPDATA: join(home, "roaming") }
+    : { HOME: home }),
+};
 delete env.ELECTRON_RUN_AS_NODE;
 const visibleViews = () =>
   app.evaluate(({ BrowserWindow }) =>
@@ -100,17 +156,34 @@ try {
   const welcome = page.locator(".welcome-modal");
   await welcome.getByRole("heading", { name: "Welcome to Kamapathy" }).waitFor();
   assert.equal(state.settings.welcomed, false);
-  // A machine without another browser offers Continue instead of Skip.
-  await welcome.getByRole("button", { name: /^(Skip|Continue)$/ }).click();
+  await welcome.getByRole("radio", { name: /^Google Chrome/ }).check();
+  await welcome.getByRole("button", { name: "Import", exact: true }).click();
+  await welcome.getByText("Imported 2 bookmarks and 3 sites.").waitFor();
+  await welcome.getByRole("button", { name: "Continue" }).click();
   await welcome.getByRole("heading", { name: "Sign in once" }).waitFor();
-  assert.ok(
-    (await welcome.getByRole("button", { name: /^Open / }).count()) >= 1,
-    "top sites come from the default bookmarks on a fresh profile",
-  );
+  const topSites = welcome.getByRole("button", { name: /^Open / });
+  assert.equal(await topSites.first().getAttribute("aria-label"), "Open docs.example");
+  assert.equal(await topSites.count(), 6);
   await welcome.getByRole("button", { name: "Done" }).click();
   await welcome.waitFor({ state: "detached" });
   await waitForState(page, (state) => state.settings.welcomed);
-  checked("the welcome dialog offers an import and top sites to sign in to, once");
+  state = await page.evaluate(() => window.kamapathy.getState());
+  assert.deepEqual(
+    state.bookmarks.slice(-2).map((bookmark) => [bookmark.title, bookmark.url]),
+    [
+      ["Docs", "https://docs.example/"],
+      ["Mail", "https://mail.example/inbox"],
+    ],
+  );
+  assert.deepEqual(
+    state.history.map((entry) => [entry.url, entry.visits]),
+    [
+      ["https://docs.example/plan", 5],
+      ["https://mail.example/inbox", 3],
+      ["https://shop.example/", 1],
+    ],
+  );
+  checked("the welcome dialog imports bookmarks and history from another browser, then offers top sites, once");
   assert.equal(await page.getByRole("complementary").count(), 0);
   if (process.platform === "darwin") {
     assert.deepEqual(

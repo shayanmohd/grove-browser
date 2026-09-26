@@ -67,6 +67,7 @@ export function Modal({
   children,
   className = "",
   initialFocus,
+  autoFocus = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -75,6 +76,8 @@ export function Modal({
   children: ReactNode;
   className?: string;
   initialFocus?: RefObject<HTMLElement | null>;
+  // Off when the content focuses its own primary control once it has loaded.
+  autoFocus?: boolean;
 }) {
   return (
     <Dialog.Root
@@ -88,6 +91,10 @@ export function Modal({
         <Dialog.Content
           className={`modal ${className}`}
           onOpenAutoFocus={(event) => {
+            if (!autoFocus) {
+              event.preventDefault();
+              return;
+            }
             if (!initialFocus?.current) return;
             event.preventDefault();
             initialFocus.current.focus();
