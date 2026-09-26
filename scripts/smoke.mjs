@@ -1757,10 +1757,10 @@ try {
       (id) => window.kamapathy.dispatch({ type: "tab:navigate", id, url: "" }),
       keep.id,
     );
-    await page.evaluate(
-      (id) => window.kamapathy.dispatch({ type: "tab:close", id }),
-      keep.id,
-    );
+    // The reply never arrives: the window answering is the one that closes.
+    await page
+      .evaluate((id) => window.kamapathy.dispatch({ type: "tab:close", id }), keep.id)
+      .catch(() => {});
     await poll(
       async () =>
         (await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)) === 0,
