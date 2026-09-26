@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, rmSync } from "node:fs";
 import { lstat, open, realpath, rm, writeFile } from "node:fs/promises";
 import { Agent, request as httpRequest } from "node:http";
 import { homedir, tmpdir } from "node:os";
@@ -552,6 +552,32 @@ async function runScript(args, options) {
     spaces: () => client.spaces(),
   });
   let temporary;
+  let failed = false;
+  const report = (error) => {
+    const code = typeof error?.code === "string" ? `${error.code}: ` : "";
+    const message = error instanceof Error ? error.message : String(error);
+    stderr.write(`error: ${code}${printable(message)}\n`);
+  };
+  // A rejection the script never awaited would otherwise print Node's stack.
+  const rejected = (error) => {
+    failed = true;
+    process.exitCode = 1;
+    report(error);
+  };
+  // process.exit() inside the script skips the finally block below.
+  const exited = () => {
+    if (temporary) rmSync(temporary, { force: true });
+  };
+  // The loop drained before the import settled: an await that never resolves.
+  const stalled = () => {
+    failed = true;
+    process.exitCode = 1;
+    stderr.write("error: The script stopped with work still pending. Await every call.\n");
+    exited();
+  };
+  process.on("unhandledRejection", rejected);
+  process.once("exit", exited);
+  process.once("beforeExit", stalled);
   try {
     if (source !== undefined) {
       temporary = join(tmpdir(), `kamapathy-run-${randomBytes(8).toString("hex")}.mjs`);
@@ -559,13 +585,12 @@ async function runScript(args, options) {
       file = temporary;
     }
     await import(pathToFileURL(file).href);
-    return 0;
+    return failed ? 1 : 0;
   } catch (error) {
-    const code = typeof error?.code === "string" ? `${error.code}: ` : "";
-    const message = error instanceof Error ? error.message : String(error);
-    stderr.write(`error: ${code}${printable(message)}\n`);
+    report(error);
     return 1;
   } finally {
+    process.off("beforeExit", stalled);
     if (temporary) await rm(temporary, { force: true });
   }
 }
@@ -943,7 +968,10 @@ export async function main(argv = process.argv.slice(2), options = {}) {
 if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
-)
+) {
+  process.exitCode = 1;
+  // A script whose work never settles keeps the failing code set above.
   main().then((code) => {
     process.exitCode = code;
   });
+}

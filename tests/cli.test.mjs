@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { chmod, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import {
@@ -998,6 +998,54 @@ describe("scripted sessions", () => {
     }
     expect(requests).toEqual(["GET /health", "POST /spaces", "GET /health", "POST /spaces"]);
   }, 20000);
+
+  it("fails loudly when a script exits early, never settles or forgets an await, and always removes its file", async () => {
+    const { paths, env: profileEnv } = await profile();
+    await fakeKamapathy(paths, {
+      handler: (request, response) => {
+        if (request.url === "/health") {
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ status: "ok", version: "test" }));
+        } else if (request.url === "/spaces") {
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ spaces: [space] }));
+        } else if (request.url === "/spaces/space-1/tabs") {
+          response.writeHead(200, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ tabs: [tab] }));
+        } else {
+          response.writeHead(422, { "Content-Type": "application/json" });
+          response.end(JSON.stringify({ error: { code: "stale_ref", message: "Observe again." } }));
+        }
+      },
+    });
+    const run = async (code) => {
+      const child = spawn(process.execPath, ["skills/kamapathy/scripts/kamapathy.mjs", "run", "-e", code], {
+        env: { ...process.env, ...profileEnv },
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => (stdout += chunk));
+      child.stderr.on("data", (chunk) => (stderr += chunk));
+      const status = await new Promise((done) => child.once("close", done));
+      return { status, stdout, stderr };
+    };
+    const leftovers = async () =>
+      (await readdir(tmpdir())).filter((name) => name.startsWith("kamapathy-run-"));
+    const before = await leftovers();
+    expect(await run('await spaces(); console.log("waiting"); await new Promise(() => {})')).toEqual({
+      status: 1,
+      stdout: "waiting\n",
+      stderr: "error: The script stopped with work still pending. Await every call.\n",
+    });
+    expect(await run('await spaces(); process.exit(0)')).toMatchObject({ status: 0, stderr: "" });
+    const unawaited = await run(
+      'const page = (await (await space("space-1")).tabs())[0]; page.click("@e2"); console.log("done")',
+    );
+    expect(unawaited.status).toBe(1);
+    expect(unawaited.stdout).toBe("done\n");
+    expect(unawaited.stderr).toBe("error: stale_ref: Observe again.\n");
+    expect(await leftovers()).toEqual(before);
+  }, 30000);
 
   it("creates isolated spaces from the command line and says how each space signs in", async () => {
     for (const [args, body] of [
