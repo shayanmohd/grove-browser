@@ -16,4 +16,6 @@ This workflow transfers installers within GitHub's infrastructure, avoiding depe
 
 [kamapathy.app](https://kamapathy.app) is the static site in `site/`, served by Cloudflare Pages. Deploy it by direct upload with `npx wrangler pages deploy site --project-name kamapathy`, which publishes the folder as it is, or connect this repository to the Pages project with no build command and `site` as the output directory so Pages rebuilds on every push to `main`. Either way, add `kamapathy.app` as the project's custom domain.
 
+Cloudflare keeps CSS, JavaScript and images for up to four hours, at its edge and in browsers. The pages link `styles.css`, `theme.js` and `app.js` with a hash of their contents, and `npm run check` fails until that hash matches, so a changed stylesheet or script always reaches visitors with the page that needs it. After replacing an image under an existing name, purge the zone's cache in the Cloudflare dashboard.
+
 The download buttons read the newest published release from the GitHub API and link straight to its files, so publishing a release updates the site without a deploy. If the API is unreachable, the buttons fall back to the releases page.
