@@ -33,6 +33,10 @@ For one action, use `click TAB_ID @e12` or pipe the exact field value to `fill T
 
 For files, read the [file selection guidance](references/actions.md#select-files) before `upload TAB_ID REF file [files]`. Use a current file-input ref and files covered by the user's authorization. Selection can immediately send files to the site; verify its receipt before continuing or retrying.
 
+## Script a whole task
+
+When a task takes many steps, write them as one Node script and run it with `node scripts/kamapathy.mjs run task.mjs`, `run -` for stdin, or `run -e "<code>"`. The script gets a connected client as the global `kamapathy` plus `createSpace`, `space` and `spaces`; a space has `open`, `tabs`, `handoff`, `resume` and `close`, and a page has `snapshot`, `text`, `click`, `fill`, `press`, `scroll`, `drag`, `wait`, `batch`, `upload`, `screenshot`, `navigate` and `close`. Every call sends one documented route; nothing runs inside the page. A failed call throws an error with the API's `code` and `message`, and an uncaught error ends the run with `error: <code>: <message>`. Read [scripting.md](references/scripting.md) for the full surface, a complete example and the same safety rules as actions.
+
 ## Stop and verify
 
 Batch execution stops on its first failure. Earlier actions may already have changed the page. Inspect the returned completed actions and current page before deciding what remains. Never replay an entire form batch after a timeout or retry a submission without checking its outcome. A successful click is not proof of a successful submission.

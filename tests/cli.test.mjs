@@ -6,10 +6,11 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { chmod, mkdir, mkdtemp, open, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   agentPaths,
   checkSocket,
+  formatSnapshot,
   launchEnvironment,
   launchKamapathy,
   launchRecord,
@@ -18,6 +19,7 @@ import {
   runCli,
   socketFetch,
 } from "../skills/kamapathy/scripts/kamapathy.mjs";
+import { KamapathyError, connect } from "../skills/kamapathy/scripts/api.mjs";
 import { agentPaths as kamapathyAgentPaths } from "../electron/agent-socket.ts";
 
 const env = { KAMAPATHY_NO_LAUNCH: "1" };
@@ -663,5 +665,369 @@ describe("standalone skill client", () => {
     expect(stderr.text()).not.toContain(missing);
     expect(stderr.text()).not.toContain("missing-private-bundle");
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("scripted sessions", () => {
+  const space = { id: "space-1", name: "Research", kind: "agent", owner: "agent", signIns: "shared" };
+  const tab = { id: "tab-1", spaceId: "space-1", title: "Reserve", url: "https://example.test/reserve" };
+  const snapshot = {
+    tabId: "tab-1",
+    url: "https://example.test/reserve",
+    title: "Reserve",
+    text: "Book a table",
+    interactables: [
+      { ref: "@e1", role: "input", label: "Name", value: "" },
+      { ref: "@e2", role: "button", label: "Check availability" },
+    ],
+    omittedControls: 0,
+    truncated: false,
+  };
+  // A stand-in API answering by route, recording every request it receives.
+  function fakeApi(routes) {
+    const requests = [];
+    const fetch = vi.fn(async (url, options = {}) => {
+      const method = options.method || "GET";
+      const body = options.body === undefined ? undefined : JSON.parse(options.body);
+      requests.push({ method, path: url.pathname, body });
+      const answer = routes[`${method} ${url.pathname}`];
+      if (!answer)
+        return Response.json({ error: { code: "not_found", message: `No route ${url.pathname}` } }, { status: 404 });
+      return typeof answer === "function" ? answer(body, options) : Response.json(answer);
+    });
+    return { fetch, requests };
+  }
+  const routes = {
+    "POST /spaces": { space },
+    "GET /spaces": { spaces: [space] },
+    "DELETE /spaces/space-1": { ok: true },
+    "POST /spaces/space-1/tabs": { tab },
+    "GET /spaces/space-1/tabs": { tabs: [tab] },
+    "POST /spaces/space-1/handoff": { ok: true, owner: "human" },
+    "POST /spaces/space-1/resume": { ok: true, owner: "agent" },
+    "POST /tabs/tab-1/navigate": { tab: { ...tab, url: "https://example.test/slots", title: "Slots" } },
+    "POST /tabs/tab-1/snapshot": snapshot,
+    "POST /tabs/tab-1/click": { ok: true, url: tab.url, rebound: ["@e2"] },
+    "POST /tabs/tab-1/fill": { ok: true },
+    "POST /tabs/tab-1/press": { ok: true },
+    "POST /tabs/tab-1/scroll": { ok: true, scrolled: "page", x: 0, y: 300, moved: true },
+    "POST /tabs/tab-1/drag": { ok: true, url: tab.url, drag: "mouse" },
+    "POST /tabs/tab-1/wait": { ok: true },
+    "POST /tabs/tab-1/actions": { ok: true, results: [{ index: 0, type: "click", result: { ok: true } }] },
+    "POST /tabs/tab-1/upload": { ok: true, selected: 1 },
+    "GET /tabs/tab-1/screenshot": () =>
+      new Response(new Uint8Array([137, 80, 78, 71]), { headers: { "Content-Type": "image/png" } }),
+    "DELETE /tabs/tab-1": { ok: true },
+  };
+  async function scriptFile(name, source) {
+    const directory = await mkdtemp(join(tmpdir(), "kamapathy-run-test-"));
+    directories.push(directory);
+    const path = join(directory, name);
+    await writeFile(path, source, { mode: 0o600 });
+    return path;
+  }
+  afterEach(() => {
+    delete globalThis.__scripted;
+  });
+
+  it("drives spaces and pages through the documented routes only, one request per call", async () => {
+    const api = fakeApi(routes);
+    const client = await connect({ env, fetch: api.fetch });
+    const research = await client.createSpace("Research");
+    expect(research).toMatchObject({ id: "space-1", name: "Research", owner: "agent", signIns: "shared" });
+    const page = await research.open("https://example.test/reserve");
+    expect(page).toMatchObject({ id: "tab-1", spaceId: "space-1", url: tab.url, title: "Reserve" });
+    expect(await page.snapshot()).toEqual(snapshot);
+    expect(await page.snapshot({ mode: "full", selector: "#slots", maxChars: 500, maxControls: 5 })).toEqual(snapshot);
+    expect(await page.text()).toBe(formatSnapshot(snapshot));
+    expect(await page.click("@e2")).toEqual({ ok: true, url: tab.url, rebound: ["@e2"] });
+    await page.click("#submit");
+    await page.fill("@e1", "Avery Quinn");
+    await page.press("Enter", "@e1");
+    await page.press("Escape");
+    await page.scroll("down", 300, "@e1");
+    await page.scroll("down", ".panel");
+    await page.scroll("up");
+    await page.drag("@e1", "#zone");
+    await page.wait({ selector: "#slots", text: "Free", timeoutMs: 1000 });
+    const batch = await page.batch([{ type: "click", ref: "@e2" }]);
+    expect(batch.results).toHaveLength(1);
+    expect(await page.navigate("https://example.test/slots")).toBe(page);
+    expect([page.url, page.title]).toEqual(["https://example.test/slots", "Slots"]);
+    expect((await research.tabs()).map((item) => item.id)).toEqual(["tab-1"]);
+    await page.close();
+    expect(await research.handoff()).toEqual({ ok: true, owner: "human" });
+    expect(research.owner).toBe("human");
+    await research.resume();
+    expect(research.owner).toBe("agent");
+    await research.close();
+    expect((await client.spaces()).map((item) => item.name)).toEqual(["Research"]);
+    expect((await client.space("space-1")).id).toBe("space-1");
+    expect(api.requests).toEqual([
+      { method: "POST", path: "/spaces", body: { name: "Research" } },
+      { method: "POST", path: "/spaces/space-1/tabs", body: { url: "https://example.test/reserve" } },
+      { method: "POST", path: "/tabs/tab-1/snapshot", body: { mode: "compact" } },
+      { method: "POST", path: "/tabs/tab-1/snapshot", body: { mode: "full", selector: "#slots", maxChars: 500, maxControls: 5 } },
+      { method: "POST", path: "/tabs/tab-1/snapshot", body: { mode: "compact" } },
+      { method: "POST", path: "/tabs/tab-1/click", body: { ref: "@e2" } },
+      { method: "POST", path: "/tabs/tab-1/click", body: { selector: "#submit" } },
+      { method: "POST", path: "/tabs/tab-1/fill", body: { ref: "@e1", value: "Avery Quinn" } },
+      { method: "POST", path: "/tabs/tab-1/press", body: { key: "Enter", ref: "@e1" } },
+      { method: "POST", path: "/tabs/tab-1/press", body: { key: "Escape" } },
+      { method: "POST", path: "/tabs/tab-1/scroll", body: { direction: "down", pixels: 300, ref: "@e1" } },
+      { method: "POST", path: "/tabs/tab-1/scroll", body: { direction: "down", selector: ".panel" } },
+      { method: "POST", path: "/tabs/tab-1/scroll", body: { direction: "up" } },
+      { method: "POST", path: "/tabs/tab-1/drag", body: { source: { ref: "@e1" }, target: { selector: "#zone" } } },
+      { method: "POST", path: "/tabs/tab-1/wait", body: { selector: "#slots", text: "Free", timeoutMs: 1000 } },
+      { method: "POST", path: "/tabs/tab-1/actions", body: { actions: [{ type: "click", ref: "@e2" }] } },
+      { method: "POST", path: "/tabs/tab-1/navigate", body: { url: "https://example.test/slots" } },
+      { method: "GET", path: "/spaces/space-1/tabs", body: undefined },
+      { method: "DELETE", path: "/tabs/tab-1", body: undefined },
+      { method: "POST", path: "/spaces/space-1/handoff", body: {} },
+      { method: "POST", path: "/spaces/space-1/resume", body: {} },
+      { method: "DELETE", path: "/spaces/space-1", body: undefined },
+      { method: "GET", path: "/spaces", body: undefined },
+      { method: "GET", path: "/spaces", body: undefined },
+    ]);
+    for (const [, options] of api.fetch.mock.calls) {
+      expect(options.headers.Authorization).toBeUndefined();
+      if (options.body !== undefined) expect(options.headers["Content-Type"]).toBe("application/json");
+    }
+  });
+
+  it("asks for an isolated space only when told to", async () => {
+    const api = fakeApi(routes);
+    const client = await connect({ env, fetch: api.fetch });
+    await client.createSpace("Shared");
+    await client.createSpace("Own session", { isolated: true });
+    await client.createSpace("Also shared", { isolated: false });
+    expect(api.requests.map((request) => request.body)).toEqual([
+      { name: "Shared" },
+      { name: "Own session", isolated: true },
+      { name: "Also shared" },
+    ]);
+  });
+
+  it("prints the same text as the snapshot command", async () => {
+    const api = fakeApi(routes);
+    const stdout = sink();
+    await runCli(["snapshot", "tab-1"], { env, fetch: api.fetch, stdout });
+    const client = await connect({ env, fetch: api.fetch });
+    const [page] = await (await client.space("space-1")).tabs();
+    expect(`${await page.text()}\n`).toBe(stdout.text());
+    const full = sink();
+    await runCli(["snapshot", "tab-1", "--full", "--selector", "main"], { env, fetch: api.fetch, stdout: full });
+    expect(`${await page.text({ mode: "full", selector: "main" })}\n`).toBe(full.text());
+    expect(api.requests.at(-1).body).toEqual(api.requests.at(-2).body);
+  });
+
+  it("throws errors that carry the API's code and message, and a failed batch keeps its progress", async () => {
+    const api = fakeApi({
+      ...routes,
+      "POST /tabs/tab-1/click": () =>
+        Response.json(
+          { error: { code: "human_control", message: "The person is using this space." } },
+          { status: 409 },
+        ),
+      "POST /tabs/tab-1/actions": () =>
+        Response.json(
+          {
+            ok: false,
+            failedIndex: 1,
+            results: [{ index: 0, type: "fill", result: { ok: true } }],
+            error: { code: "stale_ref", message: "Observe again." },
+          },
+          { status: 422 },
+        ),
+      "POST /tabs/tab-1/fill": () => {
+        throw new DOMException("Timed out", "TimeoutError");
+      },
+      "POST /tabs/tab-1/wait": () => new Response("not json", { status: 200 }),
+    });
+    const client = await connect({ env, fetch: api.fetch });
+    const page = await (await client.space("space-1")).open("https://example.test/reserve");
+    const refused = await page.click("@e2").catch((error) => error);
+    expect(refused).toBeInstanceOf(KamapathyError);
+    expect(refused).toMatchObject({ code: "human_control", message: "The person is using this space.", status: 409 });
+    const stopped = await page
+      .batch([{ type: "fill", ref: "@e1", value: "A" }, { type: "click", ref: "@e2" }])
+      .catch((error) => error);
+    expect(stopped).toMatchObject({
+      code: "stale_ref",
+      message: "Observe again.",
+      status: 422,
+      failedIndex: 1,
+      results: [{ index: 0, type: "fill", result: { ok: true } }],
+    });
+    await expect(page.fill("@e1", "A")).rejects.toMatchObject({
+      code: "timeout",
+      message: expect.stringContaining("Inspect the page before retrying"),
+    });
+    await expect(page.wait()).rejects.toMatchObject({ code: "invalid_response" });
+    await expect(client.space("space-9")).rejects.toMatchObject({ code: "space_not_found" });
+    // The identity check stays in place: a wrong instance never gets a command.
+    const { paths, env: profileEnv } = await profile();
+    await fakeKamapathy(paths, { answerAs: "f".repeat(32) });
+    await expect(connect({ env: profileEnv })).rejects.toThrow("not running");
+  });
+
+  it("uploads and saves screenshots like the commands do", async () => {
+    const api = fakeApi(routes);
+    const client = await connect({ env, fetch: api.fetch });
+    const page = await (await client.space("space-1")).open("https://example.test/reserve");
+    const file = `${await scratchFile()}.pdf`;
+    await writeFile(file, Buffer.from([1, 2, 3]));
+    expect(await page.upload("@e3", [file])).toEqual({ ok: true, selected: 1 });
+    expect(api.requests.at(-1).body).toEqual({
+      ref: "@e3",
+      files: [{ name: "fixture.json.pdf", type: "application/pdf", data: Buffer.from([1, 2, 3]).toString("base64") }],
+    });
+    await expect(page.upload("#file", [file])).rejects.toThrow("ref");
+    await expect(page.upload("@e3", [])).rejects.toThrow("between 1 and 8");
+    const png = `${await scratchFile()}.png`;
+    expect(await page.screenshot(png)).toBe(png);
+    expect([...(await readFile(png))]).toEqual([137, 80, 78, 71]);
+    await expect(page.screenshot(png)).rejects.toThrow("EEXIST");
+    await expect(page.screenshot(`${png}.jpg`)).rejects.toThrow(".png");
+  });
+
+  it("runs a script file with the connected client and its entry points as globals", async () => {
+    const api = fakeApi(routes);
+    const path = await scriptFile(
+      "task.mjs",
+      [
+        'const research = await createSpace("Research", { isolated: true });',
+        'const page = await research.open("https://example.test/reserve");',
+        "globalThis.__scripted = {",
+        "  client: kamapathy,",
+        "  text: await page.text(),",
+        "  names: (await spaces()).map((item) => item.name),",
+        '  found: (await space("space-1")).id,',
+        "};",
+      ].join("\n"),
+    );
+    const stderr = sink();
+    expect(await runCli(["run", path], { env, fetch: api.fetch, stdout: sink(), stderr })).toBe(0);
+    expect(stderr.text()).toBe("");
+    expect(globalThis.__scripted.text).toBe(formatSnapshot(snapshot));
+    expect(globalThis.__scripted.names).toEqual(["Research"]);
+    expect(globalThis.__scripted.found).toBe("space-1");
+    expect(typeof globalThis.__scripted.client.createSpace).toBe("function");
+    expect(api.requests[0]).toEqual({ method: "POST", path: "/spaces", body: { name: "Research", isolated: true } });
+  });
+
+  it("runs code from stdin or -e through a private temporary module it removes afterwards", async () => {
+    const api = fakeApi(routes);
+    const source = [
+      'import { statSync } from "node:fs";',
+      'import { fileURLToPath } from "node:url";',
+      "const path = fileURLToPath(import.meta.url);",
+      "globalThis.__scripted = { path, mode: statSync(path).mode & 0o777, count: (await spaces()).length };",
+    ].join("\n");
+    expect(
+      await runCli(["run", "-"], { env, fetch: api.fetch, stdin: Readable.from([source]), stdout: sink(), stderr: sink() }),
+    ).toBe(0);
+    const fromStdin = globalThis.__scripted;
+    expect(fromStdin.count).toBe(1);
+    expect(basename(fromStdin.path)).toMatch(/^kamapathy-run-[a-f0-9]{16}\.mjs$/);
+    if (posix) expect(fromStdin.mode).toBe(0o600);
+    expect(existsSync(fromStdin.path)).toBe(false);
+    expect(await runCli(["run", "-e", source], { env, fetch: api.fetch, stdout: sink(), stderr: sink() })).toBe(0);
+    expect(globalThis.__scripted.path).not.toBe(fromStdin.path);
+    expect(existsSync(globalThis.__scripted.path)).toBe(false);
+  });
+
+  it("ends a failing script with the error's code and message and exit status 1", async () => {
+    const api = fakeApi({
+      ...routes,
+      "POST /tabs/tab-1/click": () =>
+        Response.json({ error: { code: "stale_ref", message: "Observe again." } }, { status: 422 }),
+    });
+    const stale = sink();
+    expect(
+      await runCli(
+        ["run", "-e", 'const page = await (await space("space-1")).open("https://example.test/reserve"); await page.click("@e2");'],
+        { env, fetch: api.fetch, stdout: sink(), stderr: stale },
+      ),
+    ).toBe(1);
+    expect(stale.text()).toBe("error: stale_ref: Observe again.\n");
+    const plain = sink();
+    expect(await runCli(["run", "-e", 'throw new Error("boom")'], { env, fetch: api.fetch, stdout: sink(), stderr: plain })).toBe(1);
+    expect(plain.text()).toBe("error: boom\n");
+    const missing = sink();
+    expect(await runCli(["run", "-e", 'await space("space-9")'], { env, fetch: api.fetch, stdout: sink(), stderr: missing })).toBe(1);
+    expect(missing.text()).toMatch(/^error: space_not_found: /);
+    await expect(runCli(["run"], { env, fetch: api.fetch, stdout: sink() })).rejects.toThrow("Missing");
+    await expect(
+      runCli(["run", join(tmpdir(), "kamapathy-absent.mjs")], { env, fetch: api.fetch, stdout: sink() }),
+    ).rejects.toThrow("not found");
+  });
+
+  it("connects a script over the profile's socket with the same discovery as every command", async () => {
+    const { paths, env: profileEnv } = await profile();
+    const requests = [];
+    await fakeKamapathy(paths, {
+      handler: (request, response) => {
+        requests.push(`${request.method} ${request.url}`);
+        response.writeHead(request.method === "POST" ? 201 : 200, { "Content-Type": "application/json" });
+        response.end(
+          JSON.stringify(
+            request.url === "/health"
+              ? { status: "ok", version: "test" }
+              : request.method === "POST"
+                ? { space: { ...space, signIns: "separate" } }
+                : { spaces: [space] },
+          ),
+        );
+      },
+    });
+    // A real process with Node's own module loader: the runner imports api.mjs,
+    // which imports the CLI module, while the CLI module is the entry point.
+    for (const entry of ["skills/kamapathy/scripts/kamapathy.mjs", "scripts/kamapathy.mjs"]) {
+      const child = spawn(
+        process.execPath,
+        [entry, "run", "-e", 'console.log((await createSpace("Research", { isolated: true })).signIns)'],
+        { env: { ...process.env, ...profileEnv } },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (chunk) => (stdout += chunk));
+      child.stderr.on("data", (chunk) => (stderr += chunk));
+      const code = await new Promise((done) => child.once("close", done));
+      expect([code, stdout, stderr]).toEqual([0, "separate\n", ""]);
+    }
+    expect(requests).toEqual(["GET /health", "POST /spaces", "GET /health", "POST /spaces"]);
+  }, 20000);
+
+  it("creates isolated spaces from the command line and says how each space signs in", async () => {
+    for (const [args, body] of [
+      [["space", "create", "Research"], { name: "Research" }],
+      [["space", "create", "Research", "--isolated"], { name: "Research", isolated: true }],
+      [["space", "create", "--isolated", "Research"], { name: "Research", isolated: true }],
+    ]) {
+      const fetch = vi.fn(async () => Response.json({ space }));
+      expect(await runCli(args, { env, fetch, stdout: sink() })).toBe(0);
+      expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(body);
+    }
+    for (const [signIns, suffix] of [["separate", " isolated"], ["shared", " shared"], [undefined, ""]]) {
+      const created = sink();
+      await runCli(["space", "create", "Research"], {
+        env,
+        fetch: vi.fn(async () => Response.json({ space: { ...space, signIns } })),
+        stdout: created,
+      });
+      expect(created.text()).toBe(`space space-1 "Research" agent${suffix}\n`);
+      const listed = sink();
+      await runCli(["spaces"], {
+        env,
+        fetch: vi.fn(async () => Response.json({ spaces: [{ ...space, signIns }] })),
+        stdout: listed,
+      });
+      expect(listed.text()).toBe(`space-1 "Research" agent${suffix}\n`);
+    }
+    const help = sink();
+    await runCli(["help"], { env, fetch: vi.fn(), stdout: help });
+    expect(help.text()).toContain("--isolated");
+    expect(help.text()).toMatch(/\n  run /);
   });
 });

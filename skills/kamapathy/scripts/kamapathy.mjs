@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, open, realpath, writeFile } from "node:fs/promises";
+import { lstat, open, realpath, rm, writeFile } from "node:fs/promises";
 import { Agent, request as httpRequest } from "node:http";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
@@ -19,7 +20,8 @@ Usage: node kamapathy.mjs <command> [arguments] [--json]
 
   health                              Check the connection
   spaces                              List accessible spaces
-  space create <name>                 Create a background agent space
+  space create <name> [--isolated]    Create a background agent space, with
+                                      its own sign-ins when --isolated is given
   space close <space-id>               Close a space and its tabs
   tabs <space-id>                      List tabs in an agent space
   open <space-id> <url>                Open a background tab
@@ -45,6 +47,10 @@ Usage: node kamapathy.mjs <command> [arguments] [--json]
   close <tab-id>                      Close a tab
   handoff <space-id>                  Pause automation for human control
   resume <space-id>                   Take control back when the person says to continue
+  run <file.mjs>                      Run a script with the connected client as
+                                      the globals kamapathy, createSpace, space
+                                      and spaces; run - reads it from stdin and
+                                      run -e <code> runs the code itself
 
 Default output is concise text. --json returns compact JSON for programs.
 Batch stops at the first failed action. Submitted actions are never retried.
@@ -70,7 +76,7 @@ function integer(value, label, minimum = 0) {
     throw new Error(`${label} must be an integer of at least ${minimum}.`);
   return parsed;
 }
-function target(value) {
+export function target(value) {
   const text = required(value, "element ref or CSS selector");
   return /^@e\d+$/.test(text) ? { ref: text } : { selector: text };
 }
@@ -476,6 +482,94 @@ async function readJson(stream) {
   }
 }
 
+export function uploadRef(value) {
+  if (!/^@e[1-9]\d*$/.test(value || ""))
+    throw new Error("Upload requires a current file input ref from a snapshot.");
+  return value;
+}
+
+// Reads 1 to 8 regular files for an upload body: basenames, MIME types and
+// base64 bytes. Errors never disclose the local paths.
+export async function readUploadFiles(paths) {
+  if (paths.length < 1 || paths.length > 8)
+    throw new Error("Upload requires between 1 and 8 selected file paths.");
+  const mime = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".json": "application/json", ".zip": "application/zip", ".aab": "application/octet-stream", ".apk": "application/vnd.android.package-archive" };
+  const files = [];
+  let total = 0;
+  for (const path of paths) {
+    let file;
+    try {
+      file = await open(resolve(path), constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
+      const stat = await file.stat();
+      if (!stat.isFile() || stat.size > 16 * 1024 * 1024 - total)
+        throw new Error("Select regular files totaling at most 16 MiB.");
+      // Read a bounded allocation even if another process grows the file.
+      const bytes = Buffer.alloc(stat.size + 1);
+      let length = 0;
+      while (length < bytes.length) {
+        const { bytesRead } = await file.read(bytes, length, bytes.length - length, length);
+        if (!bytesRead) break;
+        length += bytesRead;
+      }
+      if (length !== stat.size)
+        throw new Error("A selected file changed size while being read. Inspect it before retrying.");
+      total += length;
+      files.push({ name: basename(path), type: mime[extname(path).toLowerCase()] || "application/octet-stream", data: bytes.subarray(0, length).toString("base64") });
+    } catch (error) {
+      if (typeof error?.code === "string")
+        throw new Error("Could not read a selected file. Check that it is readable, regular, and not a symbolic link.");
+      throw error;
+    } finally {
+      await file?.close();
+    }
+  }
+  return files;
+}
+
+// Runs an agent's script in this Node process with a connected client as
+// globals. The script reaches pages only through the API's documented routes.
+async function runScript(args, options) {
+  const stderr = options.stderr || process.stderr;
+  let source;
+  let file;
+  if (args[0] === "-e") source = required(args[1], "script code");
+  else if (args[0] === "-") source = await readInput(options.stdin || process.stdin);
+  else {
+    file = resolve(required(args[0], "script file"));
+    if (!(await exists(file)))
+      throw new Error("Script file not found. Use run <file.mjs>, run - or run -e <code>.");
+  }
+  const { connect } = await import("./api.mjs");
+  const client = await connect({
+    env: options.env,
+    connect: options.connect,
+    fetch: options.fetch,
+  });
+  Object.assign(globalThis, {
+    kamapathy: client,
+    createSpace: (name, choices) => client.createSpace(name, choices),
+    space: (id) => client.space(id),
+    spaces: () => client.spaces(),
+  });
+  let temporary;
+  try {
+    if (source !== undefined) {
+      temporary = join(tmpdir(), `kamapathy-run-${randomBytes(8).toString("hex")}.mjs`);
+      await writeFile(temporary, source, { mode: 0o600, flag: "wx" });
+      file = temporary;
+    }
+    await import(pathToFileURL(file).href);
+    return 0;
+  } catch (error) {
+    const code = typeof error?.code === "string" ? `${error.code}: ` : "";
+    const message = error instanceof Error ? error.message : String(error);
+    stderr.write(`error: ${code}${printable(message)}\n`);
+    return 1;
+  } finally {
+    if (temporary) await rm(temporary, { force: true });
+  }
+}
+
 const STATES = {
   checked: { true: "[checked]", false: "[unchecked]", mixed: "[mixed]" },
   selected: { true: "[selected]" },
@@ -559,18 +653,26 @@ function actionSummary(data) {
   return notes.length ? `ok: ${notes.join("; ")}` : "ok";
 }
 
+// Older Kamapathy versions return spaces without signIns; nothing is added then.
+const signIns = (space) =>
+  space.signIns === "separate"
+    ? " isolated"
+    : space.signIns === "shared"
+      ? " shared"
+      : "";
+
 export function formatResult(data) {
   if (data && "interactables" in data && "url" in data)
     return formatSnapshot(data);
   if (data?.space)
-    return `space ${data.space.id} ${JSON.stringify(line(data.space.name))} ${line(data.space.owner)}`;
+    return `space ${data.space.id} ${JSON.stringify(line(data.space.name))} ${line(data.space.owner)}${signIns(data.space)}`;
   if (data?.tab) return `tab ${data.tab.id} ${line(data.tab.url)}`;
   if (data?.spaces)
     return data.spaces.length
       ? data.spaces
           .map(
             (space) =>
-              `${space.id} ${JSON.stringify(line(space.name))} ${line(space.owner)}`,
+              `${space.id} ${JSON.stringify(line(space.name))} ${line(space.owner)}${signIns(space)}`,
           )
           .join("\n")
       : "No agent spaces.";
@@ -635,7 +737,14 @@ export async function runCli(argv, options = {}) {
       if (args[0] === "create") {
         path = "/spaces";
         method = "POST";
-        body = { name: required(args[1], "space name") };
+        const isolated = args.includes("--isolated");
+        body = {
+          name: required(
+            args.slice(1).find((argument) => argument !== "--isolated"),
+            "space name",
+          ),
+          ...(isolated ? { isolated: true } : {}),
+        };
       } else if (args[0] === "close") {
         path = `/spaces/${identifier(args[1])}`;
         method = "DELETE";
@@ -685,47 +794,11 @@ export async function runCli(argv, options = {}) {
       method = "POST";
       body = { ...target(args[1]), value: await readInput(stdin) };
       break;
-    case "upload": {
+    case "upload":
       path = `/tabs/${identifier(args[0])}/upload`;
       method = "POST";
-      if (!/^@e[1-9]\d*$/.test(args[1] || ""))
-        throw new Error("Upload requires a current file input ref from a snapshot.");
-      const paths = args.slice(2);
-      if (paths.length < 1 || paths.length > 8)
-        throw new Error("Upload requires between 1 and 8 selected file paths.");
-      const mime = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".pdf": "application/pdf", ".txt": "text/plain", ".csv": "text/csv", ".json": "application/json", ".zip": "application/zip", ".aab": "application/octet-stream", ".apk": "application/vnd.android.package-archive" };
-      const files = [];
-      let total = 0;
-      for (const path of paths) {
-        let file;
-        try {
-          file = await open(resolve(path), constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
-          const stat = await file.stat();
-          if (!stat.isFile() || stat.size > 16 * 1024 * 1024 - total)
-            throw new Error("Select regular files totaling at most 16 MiB.");
-          // Read a bounded allocation even if another process grows the file.
-          const bytes = Buffer.alloc(stat.size + 1);
-          let length = 0;
-          while (length < bytes.length) {
-            const { bytesRead } = await file.read(bytes, length, bytes.length - length, length);
-            if (!bytesRead) break;
-            length += bytesRead;
-          }
-          if (length !== stat.size)
-            throw new Error("A selected file changed size while being read. Inspect it before retrying.");
-          total += length;
-          files.push({ name: basename(path), type: mime[extname(path).toLowerCase()] || "application/octet-stream", data: bytes.subarray(0, length).toString("base64") });
-        } catch (error) {
-          if (typeof error?.code === "string")
-            throw new Error("Could not read a selected file. Check that it is readable, regular, and not a symbolic link.");
-          throw error;
-        } finally {
-          await file?.close();
-        }
-      }
-      body = { ref: args[1], files };
+      body = { ref: uploadRef(args[1]), files: await readUploadFiles(args.slice(2)) };
       break;
-    }
     case "press":
       path = `/tabs/${identifier(args[0])}/press`;
       method = "POST";
@@ -808,6 +881,8 @@ export async function runCli(argv, options = {}) {
       method = "POST";
       body = {};
       break;
+    case "run":
+      return runScript(args, options);
     default:
       throw new Error(`Unknown command: ${command}. Run help for usage.`);
   }
@@ -863,8 +938,12 @@ export async function main(argv = process.argv.slice(2), options = {}) {
   }
 }
 
+// No top level await here: run imports api.mjs, which imports this module, and
+// an await pending in this module would leave that import waiting forever.
 if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 )
-  process.exitCode = await main();
+  main().then((code) => {
+    process.exitCode = code;
+  });

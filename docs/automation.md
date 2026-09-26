@@ -114,6 +114,19 @@ Wait observes a uniquely matching visible selector, literal page text, or both. 
 
 Batch execution has a total 60-second budget. A failure is not a rollback, and a timeout does not prove that an input or form submission was cancelled. Inspect the outcome before retrying a consequential action. A batch reduces request overhead; it does not grant an agent permission to submit forms or send messages.
 
+## Scripts
+
+`run` executes an agent's script in Node.js with a connected client, so a whole task is one program instead of one command per step:
+
+```sh
+node scripts/kamapathy.mjs run task.mjs
+node scripts/kamapathy.mjs run -e 'const research = await createSpace("Research"); const page = await research.open("https://example.com"); console.log(await page.text())'
+```
+
+`run -` reads the script from standard input. The script is an ES module with top level `await`, access to Node built-ins, and the globals `kamapathy` (the client), `createSpace`, `space` and `spaces`. It connects before the first line runs, the same way every command does, and prints whatever it prints. An uncaught error ends the run with `error: <code>: <message>` on stderr and exit status 1. Code given through `-` or `-e` goes through a private temporary file that is removed afterwards.
+
+The client module, `skills/kamapathy/scripts/api.mjs`, exports `connect(options?)` for any Node program and depends on Node built-ins only. A `Client` has `createSpace(name, { isolated })`, `space(id)` and `spaces()`. A `Space` carries `id`, `name`, `owner` and `signIns`, with `open(url)`, `tabs()`, `handoff()`, `resume()` and `close()`. A `Page` carries `id`, `url` and `title`, with `navigate`, `snapshot`, `text` (the same text the CLI prints), `click`, `fill`, `press`, `scroll`, `drag`, `wait`, `batch`, `upload`, `screenshot` and `close`. Each method sends exactly one route from the table below; the script runs on your computer and never inside a page. A failed call throws a `KamapathyError` with the API's `code`, `message` and HTTP `status`; a failed batch also carries `results` and `failedIndex`. The skill's [scripting reference](../skills/kamapathy/references/scripting.md) has the complete surface, an example and the safety rules.
+
 ## Human handoff
 
 `handoff` changes the space owner to human, as does choosing **Take over** in Kamapathy. While under human control, the API cannot inspect, navigate, capture, modify, or delete that space or its tabs, and those requests return HTTP 409 with `human_control`. The space remains visible in `GET /spaces` with `owner: "human"`.
@@ -136,7 +149,7 @@ Screenshots require a shown, unminimized Kamapathy window, including captures of
 | ------ | ---------------------- | ------------------------------------------------------------------------------------------------------ |
 | GET    | `/health`              | Status and app version                                                                                 |
 | GET    | `/spaces`              | `{ spaces: [...] }` for this API session                                                               |
-| POST   | `/spaces`              | `{ "name": "Research" }`, returns `{ space }`                                                          |
+| POST   | `/spaces`              | `{ "name": "Research", "isolated": true }`; `isolated` is optional and gives the space a session without your sign-ins; returns `{ space }` with its `signIns` |
 | DELETE | `/spaces/:id`          | Closes the space and its tabs                                                                          |
 | GET    | `/spaces/:id/tabs`     | `{ tabs: [...] }`                                                                                      |
 | POST   | `/spaces/:id/tabs`     | `{ "url": "https://example.com" }`, returns `{ tab }`                                                  |

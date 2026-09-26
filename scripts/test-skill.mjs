@@ -1153,6 +1153,44 @@ try {
       );
     }
   }
+  // A whole task in one script: the runner connects over the same socket,
+  // sets the globals, and reaches the fixture only through the API.
+  const scriptPath = join(temporary, "scripted-form.mjs");
+  await writeFile(
+    scriptPath,
+    [
+      'const review = await createSpace("Scripted form review");',
+      `const page = await review.open(${JSON.stringify(`${fixture.origin}/forms/new`)});`,
+      'const before = await page.snapshot({ mode: "full" });',
+      "const ref = (label) => before.interactables.find((control) => control.label === label).ref;",
+      "const created = await page.batch([",
+      '  { type: "fill", ref: ref("Form title"), value: "Scripted feedback" },',
+      '  { type: "fill", ref: ref("Template"), value: "research" },',
+      '  { type: "click", ref: ref("Create form") },',
+      '  { type: "wait", selector: "#form-created", text: "Form created", timeoutMs: 5000 },',
+      "]);",
+      "await review.handoff();",
+      "await review.resume();",
+      "console.log(JSON.stringify({ space: review.id, tab: page.id, owner: review.owner, steps: created.results.length, text: await page.text() }));",
+      "",
+    ].join("\n"),
+  );
+  const scripted = JSON.parse((await cli(["run", scriptPath])).output);
+  assert.equal(scripted.steps, 4);
+  assert.equal(scripted.owner, "agent");
+  assert.equal(fixture.forms.size, 2);
+  assert.match(scripted.text, /Form created/);
+  assert.equal(`${scripted.text}\n`, (await cli(["snapshot", scripted.tab])).output);
+  assert.equal((await json(["spaces"])).spaces.length, 2);
+  const listed = await cli(
+    ["run", "-"],
+    'console.log((await spaces()).map((space) => space.name).sort().join(", "))',
+  );
+  assert.equal(listed.output, "Scripted form review, Skill form review\n");
+  const refused = await cli(["run", "-e", `await (await space(${JSON.stringify(scripted.space)})).open("not a url")`], undefined, { failure: true });
+  assert.match(refused.errors, /^error: invalid_url: /);
+  await cli(["run", "-e", `await (await space(${JSON.stringify(scripted.space)})).close()`]);
+  passed("run executes a whole task script over the socket, text() matches the CLI snapshot, and errors carry their code");
   await cli(["space", "close", space.id]);
   assert.equal((await json(["spaces"])).spaces.length, 0);
   passed("skill cleanup closes only its own agent space");
@@ -1171,7 +1209,7 @@ try {
     JSON.stringify(summary, null, 2),
   );
   console.log(
-    `Skill end-to-end passed: ${checks.length} checks, ${calls.length} client commands, one form and one response created.`,
+    `Skill end-to-end passed: ${checks.length} checks, ${calls.length} client commands, two forms and one response created.`,
   );
 } catch (error) {
   if (diagnostics)
