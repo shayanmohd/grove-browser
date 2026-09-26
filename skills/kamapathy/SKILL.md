@@ -5,7 +5,7 @@ description: Browse and interact with websites through the Kamapathy desktop bro
 
 # Kamapathy browser
 
-Use the bundled Node.js client to operate Kamapathy on macOS, Windows, or Linux. Agent spaces have separate cookies from personal browsing and cannot see the person's own tabs. The client needs Node.js 22.12 or later and no package installation.
+Use the bundled Node.js client to operate Kamapathy on macOS, Windows, or Linux. Agent spaces use the person's sign-ins unless they are isolated, and never see the person's own tabs. The client needs Node.js 22.12 or later and no package installation.
 
 ## Connect and inspect
 
