@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserController } from "./controller";
 import { menuTemplate } from "./menu";
 import { readState } from "./persistence";
+import { availableBrowsers, importFrom, type BrowserId } from "./import";
 import { startAutomation } from "./automation";
 import {
   agentPaths,
@@ -26,6 +27,8 @@ import type {
   BrowserAction,
   BrowserState,
   ContentBounds,
+  ImportOutcome,
+  ImportRequest,
 } from "../shared/types";
 import { surfaceColor } from "../shared/theme";
 
@@ -276,6 +279,47 @@ function registerIpc(): void {
   ipcMain.handle("kamapathy:unfreeze", (event) => validateSender(event).unfreeze());
   ipcMain.handle("kamapathy:thumbnails", (event) =>
     validateSender(event).thumbnails(),
+  );
+  ipcMain.handle("kamapathy:import-sources", (event) => {
+    validateSender(event);
+    return availableBrowsers();
+  });
+  ipcMain.handle(
+    "kamapathy:import",
+    async (event, request: ImportRequest): Promise<ImportOutcome> => {
+      const owner = validateSender(event);
+      if (
+        !request ||
+        typeof request !== "object" ||
+        typeof request.source !== "string" ||
+        (request.profile !== undefined && typeof request.profile !== "string") ||
+        typeof request.bookmarks !== "boolean" ||
+        typeof request.history !== "boolean"
+      )
+        throw new Error("Invalid import request.");
+      const source = availableBrowsers().find(
+        (item) => item.id === request.source,
+      );
+      if (!source) throw new Error("That browser was not found.");
+      const data = await importFrom(
+        source.id as BrowserId,
+        request.profile,
+        { bookmarks: request.bookmarks, history: request.history },
+      );
+      const bookmarksBefore = owner.state.bookmarks.length;
+      const known = new Set(owner.state.history.map((entry) => entry.url));
+      await owner.dispatch({
+        type: "import:apply",
+        bookmarks: data.bookmarks,
+        history: data.history,
+      });
+      return {
+        bookmarks: owner.state.bookmarks.length - bookmarksBefore,
+        history: owner.state.history.filter((entry) => !known.has(entry.url))
+          .length,
+        warnings: data.warnings,
+      };
+    },
   );
   ipcMain.on("kamapathy:window", (event, action: string) => {
     try {
