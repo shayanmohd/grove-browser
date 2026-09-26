@@ -14,6 +14,7 @@ import {
   resolveSocket,
   socketFetch,
 } from "../skills/kamapathy/scripts/kamapathy.mjs";
+import { framePages } from "../tests/fixtures/frame-pages.mjs";
 
 const page = (body, script = "") =>
   `<!doctype html><html><body style="margin:20px">${body}<script>${script}</script></body></html>`;
@@ -32,6 +33,7 @@ const pages = {
     `<div id="item" draggable="true" style="width:120px;padding:12px;border:1px solid">Drag me</div><div id="zone" style="margin-top:40px;width:240px;height:80px;border:1px dashed">Drop here</div>`,
     `document.getElementById('item').ondragstart=(event)=>event.dataTransfer.setData('text/plain','item');const zone=document.getElementById('zone');zone.ondragover=(event)=>event.preventDefault();zone.ondrop=(event)=>{event.preventDefault();zone.textContent='dropped '+event.dataTransfer.getData('text/plain');};`,
   ),
+  ...framePages,
 };
 const site = createServer((request, response) => {
   const html = pages[new URL(request.url, "http://x").pathname];
@@ -114,6 +116,86 @@ try {
   assert.equal(dragResult.drag, "html5");
   assert.match((await snapshot(drag)).text, /dropped item/);
   passed("HTML5 drags reach an unwatched agent tab");
+
+  const byLabel = (page, label) =>
+    page.interactables.find((control) => control.label === label);
+  const shadow = await open("/frames/shadow");
+  await poll(async () => (await controls(shadow)).includes("Save preferences"), {
+    timeoutMs: 10000,
+    label: "the shadow root fixture",
+  });
+  const shadowPage = await snapshot(shadow);
+  assert.match(shadowPage.text, /Notifications[\s\S]*Rendered in the shadow root/);
+  assert.doesNotMatch(shadowPage.text, /Not shown/);
+  assert.deepEqual(
+    shadowPage.interactables.map((control) => control.label),
+    ["Email alerts", "Save preferences", "Slotted action"],
+  );
+  const saved = await api(`/tabs/${shadow}/click`, "POST", {
+    ref: byLabel(shadowPage, "Save preferences").ref,
+  });
+  assert.equal(saved.status, 200, JSON.stringify(await saved.response.json()));
+  assert.match((await snapshot(shadow)).text, /Saved from shadow/);
+  passed("snapshots list and click controls inside open shadow roots");
+
+  const embedded = await open("/frames/outer");
+  const outer = await poll(
+    async () => {
+      const page = await snapshot(embedded);
+      return byLabel(page, "Deep button") && byLabel(page, "Card details")?.crossOrigin
+        ? page
+        : null;
+    },
+    { timeoutMs: 10000, label: "the frames fixture" },
+  );
+  assert.match(
+    outer.text,
+    /Text above the frame[\s\S]*Text inside the frame[\s\S]*Text two frames deep[\s\S]*Outer untouched/,
+  );
+  assert.equal(byLabel(outer, "Frame note").frame, "0");
+  assert.equal(byLabel(outer, "Deep button").frame, "0/0");
+  assert.equal(byLabel(outer, "Card details").frame, undefined);
+  assert.equal(byLabel(outer, "Card details").role, "iframe");
+  const deep = await api(`/tabs/${embedded}/click`, "POST", {
+    ref: byLabel(outer, "Deep button").ref,
+  });
+  assert.equal(deep.status, 200, JSON.stringify(await deep.response.json()));
+  assert.match((await snapshot(embedded)).text, /Deep clicked/);
+  passed("native clicks reach a button two same-origin frames deep");
+
+  const filled = await api(`/tabs/${embedded}/fill`, "POST", {
+    selector: "#note",
+    value: "hello",
+  });
+  assert.equal(filled.status, 200, JSON.stringify(await filled.response.json()));
+  const entered = await api(`/tabs/${embedded}/press`, "POST", {
+    key: "Enter",
+    ref: byLabel(outer, "Frame note").ref,
+  });
+  assert.equal(entered.status, 200, JSON.stringify(await entered.response.json()));
+  const waited = await api(`/tabs/${embedded}/wait`, "POST", {
+    text: "Entered hello",
+    timeoutMs: 3000,
+  });
+  assert.equal(waited.status, 200, JSON.stringify(await waited.response.json()));
+  const scoped = await json(`/tabs/${embedded}/snapshot`, "POST", {
+    selector: "#inner-result",
+  });
+  assert.equal(scoped.text, "Entered hello");
+  const uploaded = await api(`/tabs/${embedded}/upload`, "POST", {
+    ref: byLabel(outer, "Frame file").ref,
+    files: [{ name: "note.txt", type: "text/plain", data: Buffer.from("hi").toString("base64") }],
+  });
+  assert.equal(uploaded.status, 200, JSON.stringify(await uploaded.response.json()));
+  assert.match((await snapshot(embedded)).text, /Files 1/);
+  passed("fill, key presses, waits, scoped snapshots and uploads work inside a frame");
+
+  const blocked = await api(`/tabs/${embedded}/click`, "POST", {
+    ref: byLabel(outer, "Card details").ref,
+  });
+  assert.equal(blocked.status, 409);
+  assert.equal((await blocked.response.json()).error.code, "cross_origin_frame");
+  passed("a frame from another origin is listed and refuses actions");
 
   const shot = await api(`/tabs/${click}/screenshot`);
   assert.equal(shot.status, 200);

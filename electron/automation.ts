@@ -538,9 +538,11 @@ export async function startAutomation(
         "page_changed",
         "The page navigated during this operation. Inspect the new page before continuing.",
       );
+    // A control inside a frame from another origin is a conflict with the
+    // page, not a bad request, like a control the person is using.
     if (result?.ok === false)
       return fail(
-        422,
+        result.code === "cross_origin_frame" ? 409 : 422,
         typeof result.code === "string" ? result.code : "element_action_failed",
         typeof result.error === "string"
           ? result.error

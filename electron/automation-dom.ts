@@ -39,6 +39,7 @@ export function pageOperation(
     group: string;
     context: string;
     selector: string;
+    frame: string;
     url: string;
   };
   type Registry = {
@@ -77,37 +78,220 @@ export function pageOperation(
   // A snapshot reads the same styles many times, so it keeps them while it
   // runs. Other operations read styles fresh, after page handlers run.
   let styles: Map<Element, CSSStyleDeclaration> | undefined;
+  const docOf = (node: Node) => node.ownerDocument || (node as Document);
   const styleOf = (element: Element) => {
     let style = styles?.get(element);
     if (!style) {
-      style = getComputedStyle(element);
+      style = (docOf(element).defaultView || window).getComputedStyle(element);
       styles?.set(element, style);
     }
     return style;
+  };
+  // Elements inside a same-origin frame belong to that frame's realm, where
+  // instanceof against this document's constructors is false, so kinds of
+  // elements are told apart by tag.
+  const html = (element: Element | null): element is HTMLElement =>
+    !!element && element.namespaceURI === "http://www.w3.org/1999/xhtml";
+  const isElement = (value: unknown): value is Element =>
+    !!value && (value as Node).nodeType === 1;
+  const inputElement = (element: Element): element is HTMLInputElement =>
+    element.localName === "input" && html(element);
+  const textAreaElement = (
+    element: Element,
+  ): element is HTMLTextAreaElement =>
+    element.localName === "textarea" && html(element);
+  const selectElement = (element: Element): element is HTMLSelectElement =>
+    element.localName === "select" && html(element);
+  // The document of a frame this page may read: one from the same origin.
+  const frameDocument = (element: Element) =>
+    element.localName === "iframe" || element.localName === "frame"
+      ? (element as HTMLIFrameElement).contentDocument
+      : null;
+  // A frame whose content stays out of reach, such as a payment form or a
+  // map from another origin.
+  const opaqueFrame = (element: Element) =>
+    (element.localName === "iframe" || element.localName === "frame") &&
+    !frameDocument(element);
+  // The frame elements around an element, outermost first, or undefined once
+  // its document is no longer shown in this page.
+  const framesOf = (element: Element) => {
+    const frames: Element[] = [];
+    for (let doc = docOf(element); doc !== document; ) {
+      const frame = doc.defaultView?.frameElement;
+      if (!frame?.isConnected) return undefined;
+      frames.unshift(frame);
+      doc = docOf(frame);
+    }
+    return frames;
+  };
+  const live = (element: Element) =>
+    element.isConnected && framesOf(element) !== undefined;
+  // This document, then every same-origin frame document, depth first.
+  let docs: Document[] | undefined;
+  const documents = () => {
+    if (!docs) {
+      const found: Document[] = [];
+      const collect = (doc: Document) => {
+        found.push(doc);
+        for (const frame of doc.querySelectorAll("iframe,frame")) {
+          const inner = frameDocument(frame);
+          if (inner) collect(inner);
+        }
+      };
+      collect(document);
+      docs = found;
+    }
+    return docs;
+  };
+  // Selectors match across this document and the frames it can read.
+  const matching = (selector: string) => {
+    const found: Element[] = [];
+    for (const doc of documents())
+      for (const element of doc.querySelectorAll(selector)) found.push(element);
+    return found;
+  };
+  // Frames are named by their index among the frames of the document around
+  // them, such as "0" or "0/1" for a frame inside the first frame.
+  const framePath = (element: Element) =>
+    (framesOf(element) || [])
+      .map((frame) =>
+        Array.prototype.indexOf.call(
+          docOf(frame).querySelectorAll("iframe,frame"),
+          frame,
+        ),
+      )
+      .join("/");
+  const documentAt = (path: string) => {
+    let doc: Document | null = document;
+    for (const index of path ? path.split("/") : []) {
+      const frame: Element | undefined =
+        doc.querySelectorAll("iframe,frame")[Number(index)];
+      doc = frame ? frameDocument(frame) : null;
+      if (!doc) return null;
+    }
+    return doc;
+  };
+  // The element around another as a person sees the page: its parent, the
+  // host of its shadow root, or the frame showing its document.
+  const parentOf = (element: Element): Element | null =>
+    element.parentElement ||
+    (element.getRootNode() as ShadowRoot).host ||
+    docOf(element).defaultView?.frameElement ||
+    null;
+  // Whether a node is an element or drawn inside it, through shadow roots
+  // and frames, which contains does not cross.
+  const within = (element: Element, hit: Node | null) => {
+    for (let node = hit; node; ) {
+      if (node === element) return true;
+      node =
+        node.nodeType === 11
+          ? (node as ShadowRoot).host
+          : node.nodeType === 9
+            ? (node as Document).defaultView?.frameElement || null
+            : node.parentNode;
+    }
+    return false;
+  };
+  // Visits nodes in the order a person sees them: through open shadow roots,
+  // with slotted content where its slot is, and into same-origin frames. A
+  // visit returning false keeps the walk out of that element's subtree.
+  const walk = (root: Node, visit: (node: Node) => boolean | void) => {
+    const into = (nodes: Iterable<Node>) => {
+      for (const node of nodes) step(node);
+    };
+    const descend = (element: Element) => {
+      const inner = frameDocument(element);
+      if (element.shadowRoot) into(element.shadowRoot.childNodes);
+      else if (element.localName === "slot") {
+        const assigned = (element as HTMLSlotElement).assignedNodes({
+          flatten: true,
+        });
+        into(assigned.length ? assigned : element.childNodes);
+      } else if (inner) into(inner.childNodes);
+      else if (!opaqueFrame(element)) into(element.childNodes);
+    };
+    const step = (node: Node) => {
+      if (node.nodeType === 3) visit(node);
+      else if (node.nodeType === 1 && visit(node) !== false)
+        descend(node as Element);
+    };
+    if (root.nodeType === 1) descend(root as Element);
+    else into(root.childNodes);
+  };
+  // Where a frame's document begins inside the document around it.
+  const frameOrigin = (frame: Element) => {
+    const box = frame.getBoundingClientRect();
+    const style = styleOf(frame);
+    return {
+      x: box.left + frame.clientLeft + parseFloat(style.paddingLeft),
+      y: box.top + frame.clientTop + parseFloat(style.paddingTop),
+    };
+  };
+  // Where an element sits in the top viewport, through the frames around it,
+  // and the part of that viewport those frames can show.
+  const placed = (element: Element) => {
+    const box = element.getBoundingClientRect();
+    const clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
+    let x = 0,
+      y = 0;
+    for (const frame of framesOf(element) || []) {
+      const origin = frameOrigin(frame);
+      x += origin.x;
+      y += origin.y;
+      const inner = frameDocument(frame)?.documentElement;
+      clip.left = Math.max(clip.left, x);
+      clip.top = Math.max(clip.top, y);
+      clip.right = Math.min(clip.right, x + (inner || frame).clientWidth);
+      clip.bottom = Math.min(clip.bottom, y + (inner || frame).clientHeight);
+    }
+    return {
+      left: box.left + x,
+      top: box.top + y,
+      right: box.right + x,
+      bottom: box.bottom + y,
+      clip,
+    };
+  };
+  // What a pointer at a point of the top viewport lands on: the element's
+  // frame in every document around it, then the innermost element in its
+  // own document, through open shadow roots.
+  const hitAt = (element: Element, x: number, y: number) => {
+    const deep = (root: Document | ShadowRoot) => {
+      let hit = root.elementFromPoint(x, y);
+      while (hit?.shadowRoot) {
+        const inner = hit.shadowRoot.elementFromPoint(x, y);
+        if (!inner || inner === hit) break;
+        hit = inner;
+      }
+      return hit;
+    };
+    for (const frame of framesOf(element) || []) {
+      if (deep(docOf(frame)) !== frame) return null;
+      const origin = frameOrigin(frame);
+      x -= origin.x;
+      y -= origin.y;
+    }
+    return deep(docOf(element));
   };
   // aria-hidden removes content from assistive technology, not from the
   // screen. Page text includes it, because component libraries put visible
   // labels and questions there. Controls under it stay excluded, as a modal
   // hides the page behind it this way.
   const visible = (element: Element, includeAriaHidden = false) => {
-    if (
-      !element.isConnected ||
-      element.closest(
-        includeAriaHidden
-          ? "[hidden],[inert]"
-          : '[hidden],[inert],[aria-hidden="true"]',
-      )
-    )
-      return false;
+    if (!element.isConnected) return false;
+    const hiding = includeAriaHidden
+      ? "[hidden],[inert]"
+      : '[hidden],[inert],[aria-hidden="true"]';
     const style = styleOf(element);
-    for (
-      let ancestor: Element | null = element;
-      ancestor;
-      ancestor = ancestor.parentElement
-    ) {
+    // Ancestors are followed through shadow roots and frames, checking the
+    // hiding attributes once per tree, where closest stops.
+    let ancestor: Element | null = element;
+    let boundary = true;
+    while (ancestor) {
+      if (boundary && ancestor.closest(hiding)) return false;
       if (
-        ancestor instanceof HTMLDetailsElement &&
-        !ancestor.open &&
+        ancestor.localName === "details" &&
+        !(ancestor as HTMLDetailsElement).open &&
         ancestor !== element
       ) {
         const summary = Array.from(ancestor.children).find(
@@ -120,7 +304,7 @@ export function pageOperation(
       // radio on top of it at opacity 0, where it still takes the click.
       const transparentControl =
         ancestor === element &&
-        element instanceof HTMLInputElement &&
+        inputElement(element) &&
         (element.type === "checkbox" || element.type === "radio");
       if (
         (inherited.opacity === "0" && !transparentControl) ||
@@ -128,6 +312,8 @@ export function pageOperation(
         inherited.contentVisibility === "hidden"
       )
         return false;
+      boundary = !ancestor.parentElement;
+      ancestor = parentOf(ancestor);
     }
     return (
       style.display !== "none" &&
@@ -145,32 +331,29 @@ export function pageOperation(
       styleOf(parent).fontFamily,
     );
   const pageText = (scope: Element, maximum = Infinity) => {
-    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     let text = "",
       previousBlock: Element | null = null;
     let previousRect: DOMRect | undefined;
-    for (
-      let node = walker.nextNode();
-      node && text.length <= maximum;
-      node = walker.nextNode()
-    ) {
+    walk(scope, (node) => {
+      if (text.length > maximum) return false;
+      if (node.nodeType !== 3) return;
       const parent = node.parentElement;
       if (
         !parent ||
         parent.closest(
           "script,style,noscript,template,input,textarea,select",
         ) ||
-        (parent instanceof HTMLElement && parent.isContentEditable) ||
+        (html(parent) && parent.isContentEditable) ||
         !visible(parent, true) ||
         iconName(node, parent)
       )
-        continue;
-      const range = document.createRange();
+        return;
+      const range = docOf(node).createRange();
       range.selectNodeContents(node);
       const rects = Array.from(range.getClientRects()).filter(
         (rect) => rect.width > 0 && rect.height > 0,
       );
-      if (!rects.length) continue;
+      if (!rects.length) return;
       let block = parent;
       while (
         block.parentElement &&
@@ -197,18 +380,18 @@ export function pageOperation(
       text += value.slice(0, Math.max(0, maximum + 1 - text.length));
       previousBlock = block;
       previousRect = rects.at(-1);
-    }
+    });
     return text;
   };
   // Sites commonly hide the actual input behind a visible upload panel. Expose
   // its metadata only while its containing UI is visible, never in closed UI.
   const uploadControl = (element: Element) =>
-    element instanceof HTMLInputElement && element.type === "file" &&
+    inputElement(element) && element.type === "file" &&
     element.isConnected && !element.closest('[inert],[aria-hidden="true"]') &&
     (visible(element) || (!!element.parentElement && visible(element.parentElement)));
   const unique = (selector: string) => {
     try {
-      const matches = document.querySelectorAll(selector);
+      const matches = matching(selector);
       if (matches.length !== 1)
         return failure(
           `Selector matched ${matches.length} elements. Use a unique selector.`,
@@ -218,17 +401,25 @@ export function pageOperation(
       return failure("Invalid CSS selector.", "invalid_selector");
     }
   };
+  // A frame from another origin is listed so an agent knows content is
+  // there, but nothing in it can be read or operated from this page.
+  const reachable = (element: Element) =>
+    opaqueFrame(element)
+      ? failure(
+          "This control is inside a frame from another origin, which Kamapathy cannot read. Ask the person to continue there.",
+          "cross_origin_frame",
+        )
+      : element;
   const target = (spec = payload as ElementTarget) => {
     if (typeof spec.ref === "string") {
       const element = registry.elements.get(spec.ref);
-      if (element && element.isConnected && element.ownerDocument === document)
-        return element;
+      if (element && live(element)) return reachable(element);
       const replacement = rebind(spec.ref);
       if (replacement) {
         registry.elements.set(spec.ref, replacement);
         registry.refs.set(replacement, spec.ref);
         rebound.push(spec.ref);
-        return replacement;
+        return reachable(replacement);
       }
       registry.elements.delete(spec.ref);
       registry.fingerprints.delete(spec.ref);
@@ -237,7 +428,10 @@ export function pageOperation(
         "stale_ref",
       );
     }
-    if (typeof spec.selector === "string") return unique(spec.selector);
+    if (typeof spec.selector === "string") {
+      const found = unique(spec.selector);
+      return isElement(found) ? reachable(found) : found;
+    }
     return failure(
       "Provide an element reference or a unique CSS selector.",
       "invalid_target",
@@ -247,14 +441,14 @@ export function pageOperation(
     if (
       element.id &&
       element.id.length <= 512 &&
-      document.querySelectorAll(`#${CSS.escape(element.id)}`).length === 1
+      matching(`#${CSS.escape(element.id)}`).length === 1
     )
       return `#${CSS.escape(element.id)}`;
     const path: string[] = [];
     let current: Element | null = element;
     while (
       current &&
-      current !== document.documentElement &&
+      current !== docOf(current).documentElement &&
       path.length < 32
     ) {
       const tag = current.localName;
@@ -312,6 +506,7 @@ export function pageOperation(
     element.matches(controlQuery) ||
     element.matches(popupTrigger) ||
     element.matches(draggable) ||
+    opaqueFrame(element) ||
     (element.localName.includes("-") &&
       element.hasAttribute("tabindex") &&
       (element as HTMLElement).tabIndex >= 0);
@@ -360,17 +555,20 @@ export function pageOperation(
       (element.getAttribute("aria-labelledby") || "")
         .split(/\s+/)
         .map((id) => {
-          const source = id ? document.getElementById(id) : null;
+          // Ids resolve in the element's own tree, such as its shadow root.
+          const root = element.getRootNode() as Document;
+          const source =
+            id && root.getElementById ? root.getElementById(id) : null;
           return source ? ownText(source) || clean(source.textContent) : "";
         })
         .join(" "),
     );
   const fieldLike = (element: Element) =>
-    (element instanceof HTMLInputElement &&
+    (inputElement(element) &&
       !["submit", "reset", "button", "image"].includes(element.type)) ||
-    element instanceof HTMLTextAreaElement ||
-    element instanceof HTMLSelectElement ||
-    (element instanceof HTMLElement && element.isContentEditable) ||
+    textAreaElement(element) ||
+    selectElement(element) ||
+    (html(element) && element.isContentEditable) ||
     [
       "textbox",
       "searchbox",
@@ -384,6 +582,18 @@ export function pageOperation(
   // The name a page gives a control, then what a person sees beside it. It
   // depends only on the element and page, not on the rest of a snapshot.
   const labelOf = (element: Element) => {
+    if (opaqueFrame(element)) {
+      const src = element.getAttribute("src") || "";
+      let host = "";
+      try {
+        host = src ? new URL(src, location.href).host : "";
+      } catch {}
+      return (
+        clean(element.getAttribute("title")) ||
+        clean(element.getAttribute("name")) ||
+        host
+      ).slice(0, 200);
+    }
     const field = element as HTMLInputElement;
     let label =
       clean(element.getAttribute("aria-label")) ||
@@ -402,7 +612,7 @@ export function pageOperation(
       clean(element.getAttribute("placeholder"));
     if (!label) {
       if (
-        element instanceof HTMLInputElement &&
+        inputElement(element) &&
         ["submit", "reset", "button"].includes(element.type)
       )
         label = clean(
@@ -413,16 +623,13 @@ export function pageOperation(
                 ? "Reset"
                 : ""),
         );
-      else if (
-        element instanceof HTMLInputElement &&
-        element.type === "image"
-      )
+      else if (inputElement(element) && element.type === "image")
         label = clean(element.alt);
       else if (
-        !(element instanceof HTMLInputElement) &&
-        !(element instanceof HTMLTextAreaElement) &&
-        !(element instanceof HTMLSelectElement) &&
-        !(element instanceof HTMLElement && element.isContentEditable)
+        !inputElement(element) &&
+        !textAreaElement(element) &&
+        !selectElement(element) &&
+        !(html(element) && element.isContentEditable)
       )
         label =
           element.getAttribute("role") === "combobox"
@@ -441,7 +648,7 @@ export function pageOperation(
     for (
       let container = fieldLike(element) ? element.parentElement : null,
         depth = 0;
-      !label && container && container !== document.body && depth < 6;
+      !label && container && container !== docOf(container).body && depth < 6;
       container = container.parentElement, depth++
     ) {
       if (
@@ -470,7 +677,7 @@ export function pageOperation(
     let root = container;
     for (
       let depth = 0;
-      depth < 3 && root.parentElement && root !== document.body;
+      depth < 3 && root.parentElement && root !== docOf(root).body;
       depth++
     )
       root = root.parentElement;
@@ -515,7 +722,7 @@ export function pageOperation(
   const groupOf = (element: Element) => {
     const role = element.getAttribute("role");
     const native =
-      element instanceof HTMLInputElement &&
+      inputElement(element) &&
       (element.type === "radio" || element.type === "checkbox");
     if (!native && role !== "radio" && role !== "checkbox") return "";
     const choices =
@@ -527,10 +734,10 @@ export function pageOperation(
     // Radio buttons sharing a name are one group wherever they are drawn.
     if (!container && native && element.type === "radio" && element.name) {
       const peers = Array.from(
-        document.getElementsByName(element.name),
+        docOf(element).getElementsByName(element.name),
       ).filter(
         (peer) =>
-          peer instanceof HTMLInputElement &&
+          inputElement(peer) &&
           peer.type === element.type &&
           peer.form === element.form,
       );
@@ -577,7 +784,7 @@ export function pageOperation(
       pressed?: boolean | "mixed";
     } = {};
     if (
-      element instanceof HTMLInputElement &&
+      inputElement(element) &&
       (element.type === "checkbox" || element.type === "radio")
     )
       state.checked =
@@ -604,8 +811,8 @@ export function pageOperation(
     }
     const expanded =
       element.localName === "summary" &&
-      element.parentElement instanceof HTMLDetailsElement
-        ? element.parentElement.open
+      element.parentElement?.localName === "details"
+        ? (element.parentElement as HTMLDetailsElement).open
         : aria("aria-expanded");
     if (typeof expanded === "boolean") state.expanded = expanded;
     const pressed = aria("aria-pressed");
@@ -616,7 +823,7 @@ export function pageOperation(
   // after a "show password" toggle turns the field into plain text.
   const secretName = /(^|[^a-z])(pass(word|wd|code|phrase)?|pwd|otp|cvc|cvv|pin)([^a-z]|$)/i;
   const secretField = (element: Element) =>
-    (element instanceof HTMLInputElement && element.type === "password") ||
+    (inputElement(element) && element.type === "password") ||
     secretName.test(`${element.getAttribute("name") || ""} ${element.id}`) ||
     (element.getAttribute("autocomplete") || "")
       .toLowerCase()
@@ -639,7 +846,7 @@ export function pageOperation(
   // A field's current value, so an agent can check what it filled.
   const valueOf = (element: Element) => {
     const role = element.getAttribute("role");
-    if (element instanceof HTMLInputElement)
+    if (inputElement(element))
       return [
         "text",
         "search",
@@ -658,11 +865,10 @@ export function pageOperation(
       ].includes(element.type)
         ? element.value
         : undefined;
-    if (element instanceof HTMLTextAreaElement) return element.value;
-    if (element instanceof HTMLSelectElement)
+    if (textAreaElement(element)) return element.value;
+    if (selectElement(element))
       return element.multiple ? undefined : element.value;
-    if (element instanceof HTMLElement && element.isContentEditable)
-      return element.innerText;
+    if (html(element) && element.isContentEditable) return element.innerText;
     if (role === "slider" || role === "spinbutton")
       return (
         element.getAttribute("aria-valuetext") ||
@@ -670,7 +876,7 @@ export function pageOperation(
         ""
       );
     if (role === "combobox") return shownText(element);
-    if ((role === "textbox" || role === "searchbox") && element instanceof HTMLElement)
+    if ((role === "textbox" || role === "searchbox") && html(element))
       return element.innerText;
     return undefined;
   };
@@ -687,7 +893,7 @@ export function pageOperation(
       if (
         parent &&
         !parent.closest("script,style,noscript,template,textarea") &&
-        !(parent instanceof HTMLElement && parent.isContentEditable)
+        !(html(parent) && parent.isContentEditable)
       )
         text += node.textContent;
     }
@@ -723,6 +929,8 @@ export function pageOperation(
       (!print.label && !print.selector.startsWith("#"))
     )
       return undefined;
+    const doc = documentAt(print.frame);
+    if (!doc) return undefined;
     const matches = (element: Element) => {
       const owner = registry.refs.get(element);
       return (
@@ -737,13 +945,13 @@ export function pageOperation(
       );
     };
     try {
-      const same = document.querySelector(print.selector);
+      const same = doc.querySelector(print.selector);
       if (same && matches(same)) return same;
     } catch {}
     if (!print.label) return undefined;
     let found: Element | undefined;
     let compared = 0;
-    for (const element of document.getElementsByTagName(print.tag)) {
+    for (const element of doc.getElementsByTagName(print.tag)) {
       if (
         (element.getAttribute("role") || "") !== print.role ||
         (element.getAttribute("type") || "") !== print.type
@@ -765,29 +973,30 @@ export function pageOperation(
     return box.width === 0 || box.height === 0;
   };
   const emptyBoxBlocked = (element: Element) => {
-    const box = element.getBoundingClientRect();
-    let host = element.parentElement;
-    while (host && emptyBox(host)) host = host.parentElement;
-    const around = host?.getBoundingClientRect();
+    const box = placed(element);
+    const { clip } = box;
+    let host = parentOf(element);
+    while (host && emptyBox(host)) host = parentOf(host);
+    const around = host && placed(host);
     const x = around
-      ? Math.min(Math.max(box.left, around.left, 0), around.right - 1)
+      ? Math.min(Math.max(box.left, around.left, clip.left), around.right - 1)
       : -1;
     const y = around
-      ? Math.min(Math.max(box.top, around.top, 0), around.bottom - 1)
+      ? Math.min(Math.max(box.top, around.top, clip.top), around.bottom - 1)
       : -1;
     if (
-      box.left < 0 ||
-      box.top < 0 ||
-      box.left > innerWidth ||
-      box.top > innerHeight ||
-      x < 0 ||
-      y < 0 ||
-      x >= innerWidth ||
-      y >= innerHeight
+      box.left < clip.left ||
+      box.top < clip.top ||
+      box.left > clip.right ||
+      box.top > clip.bottom ||
+      x < clip.left ||
+      y < clip.top ||
+      x >= clip.right ||
+      y >= clip.bottom
     )
       return failure("Element is outside the viewport.");
-    const hit = document.elementFromPoint(x, y);
-    if (!hit || !host!.contains(hit))
+    const hit = hitAt(element, x, y);
+    if (!hit || !within(host!, hit))
       return failure("Another element covers the target.", "element_obscured");
   };
   if (operation === "snapshot") {
@@ -796,7 +1005,7 @@ export function pageOperation(
     let scope: Element = document.body || document.documentElement;
     if (options.selector) {
       const selected = unique(options.selector);
-      if (!(selected instanceof Element)) return selected;
+      if (!isElement(selected)) return selected;
       scope = selected;
     }
     // A detached element's fingerprint stays, so its ref can follow the
@@ -811,19 +1020,31 @@ export function pageOperation(
     }
     while (registry.fingerprints.size > 5000)
       registry.fingerprints.delete(registry.fingerprints.keys().next().value!);
-    const found = (scope.matches(query) ? [scope] : [])
-      .concat(Array.from(scope.querySelectorAll(query)))
-      .filter(
-        (element) =>
-          isControl(element) && (visible(element) || uploadControl(element)),
-      );
+    // Controls in the order a person sees them, through shadow roots and
+    // frames, which querySelectorAll does not enter. Each element's place in
+    // that order sorts in the clickable elements found later.
+    const order = new Map<Element, number>();
+    const found: Element[] = [];
+    const consider = (element: Element) => {
+      order.set(element, order.size);
+      if (
+        (element.matches(query) || opaqueFrame(element)) &&
+        isControl(element) &&
+        (visible(element) || uploadControl(element))
+      )
+        found.push(element);
+    };
+    consider(scope);
+    walk(scope, (node) => {
+      if (node.nodeType === 1) consider(node as Element);
+    });
     const listed = new Set(found);
     const holders = new Set<Element>();
     for (const element of found)
       for (
-        let parent = element.parentElement;
+        let parent = parentOf(element);
         parent && !holders.has(parent);
-        parent = parent.parentElement
+        parent = parentOf(parent)
       )
         holders.add(parent);
     const items =
@@ -890,53 +1111,44 @@ export function pageOperation(
     // Pages also draw clickable and draggable items with no control semantics.
     // A few with their own short text are listed after every other control.
     const clickable: Element[] = [];
-    const walker = document.createTreeWalker(scope, NodeFilter.SHOW_ELEMENT);
-    const skipChildren = () => {
-      for (;;) {
-        const sibling = walker.nextSibling();
-        if (sibling) return sibling;
-        if (!walker.parentNode()) return null;
-      }
-    };
     const searchEnd = performance.now() + 50;
-    let node = walker.nextNode();
-    while (node && clickable.length < 30 && performance.now() < searchEnd) {
+    walk(scope, (node) => {
+      if (
+        node.nodeType !== 1 ||
+        clickable.length >= 30 ||
+        performance.now() >= searchEnd
+      )
+        return false;
       const element = node as Element;
       const style = styleOf(element);
       if (
         listed.has(element) ||
         style.display === "none" ||
         /^(script|style|noscript|template|svg|select)$/.test(element.localName)
-      ) {
-        node = skipChildren();
-        continue;
-      }
+      )
+        return false;
       // The element that sets the pointer, not each child inheriting it.
       if (
         /^(pointer|grab|move)$/.test(style.cursor) &&
         !holders.has(element) &&
-        styleOf(element.parentElement || element).cursor !== style.cursor &&
-        !(element instanceof HTMLLabelElement && element.control)
+        styleOf(parentOf(element) || element).cursor !== style.cursor &&
+        !(
+          element.localName === "label" &&
+          (element as HTMLLabelElement).control
+        )
       ) {
         const text =
           clean(element.getAttribute("aria-label")) || ownText(element);
         if (text && text.length <= 200 && visible(element)) {
           clickable.push(element);
-          node = skipChildren();
-          continue;
+          return false;
         }
       }
-      node = walker.nextNode();
-    }
+    });
     const all = clickable.length
       ? candidates
           .concat(clickable)
-          .sort((first, second) =>
-            first.compareDocumentPosition(second) &
-            Node.DOCUMENT_POSITION_FOLLOWING
-              ? -1
-              : 1,
-          )
+          .sort((first, second) => order.get(first)! - order.get(second)!)
       : candidates;
     // When a page has more controls than the budget, list what a person can
     // act on now: open dialogs and popups, then pinned bars on screen, then
@@ -974,17 +1186,19 @@ export function pageOperation(
       // every page, so it comes after the rest of the screen.
       const bar = (pin: Element) => {
         const box = pin.getBoundingClientRect();
+        const view = docOf(pin).defaultView || window;
         return (
-          box.height <= innerHeight / 3 || box.width >= (innerWidth * 2) / 3
+          box.height <= view.innerHeight / 3 ||
+          box.width >= (view.innerWidth * 2) / 3
         );
       };
       const onScreen = (element: Element) => {
-        const box = element.getBoundingClientRect();
+        const box = placed(element);
         return (
-          box.bottom > 0 &&
-          box.right > 0 &&
-          box.top < innerHeight &&
-          box.left < innerWidth
+          box.bottom > box.clip.top &&
+          box.right > box.clip.left &&
+          box.top < box.clip.bottom &&
+          box.left < box.clip.right
         );
       };
       const rank = (element: Element) => {
@@ -1044,6 +1258,7 @@ export function pageOperation(
       const value = valueOf(element);
       const group = groupOf(element);
       const selector = selectorFor(element);
+      const frame = framePath(element);
       prints.set(ref, {
         tag: element.localName,
         role: element.getAttribute("role") || "",
@@ -1052,6 +1267,7 @@ export function pageOperation(
         group,
         context: contextOf(element),
         selector,
+        frame,
         url: location.href,
       });
       const entry = {
@@ -1075,10 +1291,12 @@ export function pageOperation(
               ? { value: value.slice(0, limit), valueTruncated: true }
               : { value }),
         ...(group ? { group: group.slice(0, limit) } : {}),
-        ...(element instanceof HTMLInputElement && element.type === "file"
+        ...(frame ? { frame } : {}),
+        ...(opaqueFrame(element) ? { crossOrigin: true } : {}),
+        ...(inputElement(element) && element.type === "file"
           ? { accept: element.accept.slice(0, 256), multiple: element.multiple, hidden: !visible(element) }
           : {}),
-        ...(element instanceof HTMLSelectElement
+        ...(selectElement(element)
           ? (() => {
               const choices = Array.from(element.options).filter(
                 (option) => option.value.length <= 256,
@@ -1113,7 +1331,7 @@ export function pageOperation(
     // gone, so its ref never follows a redrawn control.
     const kindOf = (print: Pick<Fingerprint, "tag" | "role" | "type">) =>
       JSON.stringify([print.tag, print.role, print.type]);
-    const keyOf = (print: Omit<Fingerprint, "selector" | "url">) =>
+    const keyOf = (print: Omit<Fingerprint, "selector" | "frame" | "url">) =>
       JSON.stringify([
         print.tag,
         print.role,
@@ -1179,9 +1397,9 @@ export function pageOperation(
   if (operation === "check") {
     let scope: Element = document.body || document.documentElement;
     if (typeof payload.selector === "string") {
-      let matches: NodeListOf<Element>;
+      let matches: Element[];
       try {
-        matches = document.querySelectorAll(payload.selector);
+        matches = matching(payload.selector);
       } catch {
         return failure("Invalid CSS selector.", "invalid_selector");
       }
@@ -1204,18 +1422,25 @@ export function pageOperation(
     // first frame after a navigation, so the caller counts what arrived.
     const world = globalThis as unknown as {
       kamapathyInput?: { mouse: number; key: number; drag: number };
+      kamapathyListening?: WeakSet<Document>;
     };
-    if (!world.kamapathyInput) {
-      const counts = (world.kamapathyInput = { mouse: 0, key: 0, drag: 0 });
-      addEventListener("mousedown", () => { counts.mouse += 1; }, { capture: true });
-      addEventListener("keydown", () => { counts.key += 1; }, { capture: true });
+    const counts = (world.kamapathyInput ||= { mouse: 0, key: 0, drag: 0 });
+    // Events inside a frame never reach the top window, so every document
+    // this page can read counts its own, once per document.
+    const listening = (world.kamapathyListening ||= new WeakSet());
+    for (const doc of documents()) {
+      const view = doc.defaultView;
+      if (!view || listening.has(doc)) continue;
+      listening.add(doc);
+      view.addEventListener("mousedown", () => { counts.mouse += 1; }, { capture: true });
+      view.addEventListener("keydown", () => { counts.key += 1; }, { capture: true });
       // An HTML5 drag starts unless the page cancels dragstart, which its own
       // handlers decide after this listener runs.
-      addEventListener("dragstart", (event) => {
+      view.addEventListener("dragstart", (event) => {
         setTimeout(() => { if (!event.defaultPrevented) counts.drag += 1; });
       }, { capture: true });
     }
-    return { ok: true, ...world.kamapathyInput };
+    return { ok: true, ...counts };
   }
   if (operation === "frame")
     return new Promise((resolve) =>
@@ -1280,7 +1505,7 @@ export function pageOperation(
     let start: Element | null = null;
     if (payload.ref !== undefined || payload.selector !== undefined) {
       const element = target();
-      if (!(element instanceof Element)) return element;
+      if (!isElement(element)) return element;
       if (!visible(element)) return failure("Element is not visible.");
       start = element;
     } else if (!pageScrolls)
@@ -1321,9 +1546,9 @@ export function pageOperation(
   }
   if (operation === "drag") {
     const source = target(payload.source as ElementTarget);
-    if (!(source instanceof Element)) return source;
+    if (!isElement(source)) return source;
     const destination = target(payload.target as ElementTarget);
-    if (!(destination instanceof Element)) return destination;
+    if (!isElement(destination)) return destination;
     if (!visible(source) || !visible(destination))
       return failure("Element is not visible.");
     if (
@@ -1331,7 +1556,7 @@ export function pageOperation(
       source.getAttribute("aria-disabled") === "true"
     )
       return failure("Element is disabled.");
-    if (source.contains(destination))
+    if (within(source, destination))
       return failure(
         "Drag onto an element outside the one being dragged.",
         "invalid_target",
@@ -1340,11 +1565,11 @@ export function pageOperation(
       return failure("Element has no area to drag from or onto.");
     // The middle of the part of an element inside the viewport.
     const centre = (element: Element) => {
-      const box = element.getBoundingClientRect();
-      const left = Math.max(0, box.left),
-        right = Math.min(innerWidth, box.right);
-      const top = Math.max(0, box.top),
-        bottom = Math.min(innerHeight, box.bottom);
+      const box = placed(element);
+      const left = Math.max(box.clip.left, box.left),
+        right = Math.min(box.clip.right, box.right);
+      const top = Math.max(box.clip.top, box.top),
+        bottom = Math.min(box.clip.bottom, box.bottom);
       return right > left && bottom > top
         ? { x: (left + right) / 2, y: (top + bottom) / 2 }
         : undefined;
@@ -1371,16 +1596,15 @@ export function pageOperation(
       [source, from],
       [destination, to],
     ] as const) {
-      const hit = document.elementFromPoint(point.x, point.y);
-      if (!hit || !element.contains(hit))
+      const hit = hitAt(element, point.x, point.y);
+      if (!hit || !within(element, hit))
         return failure("Another element covers the target.", "element_obscured");
     }
     return { ok: true, from, to, ...reboundResult() };
   }
   const element = target();
-  if (!(element instanceof Element)) return element;
-  if (!(element instanceof HTMLElement))
-    return failure("Element does not support this action.");
+  if (!isElement(element)) return element;
+  if (!html(element)) return failure("Element does not support this action.");
   if (operation === "upload") {
     if (!uploadControl(element))
       return failure("Use a file input in the currently visible upload form.", "invalid_upload_target");
@@ -1424,10 +1648,9 @@ export function pageOperation(
   });
   if (operation === "focus") {
     element.focus({ preventScroll: true });
-    if (
-      document.activeElement !== element &&
-      !element.contains(document.activeElement)
-    )
+    // Focus is read from the element's own tree: its shadow root or frame.
+    const active = (element.getRootNode() as Document).activeElement;
+    if (active !== element && !element.contains(active))
       return failure("Element could not be focused.");
     return { ok: true, ...reboundResult() };
   }
@@ -1444,29 +1667,29 @@ export function pageOperation(
       return (
         emptyBoxBlocked(element) || { ok: true, empty: true, ...reboundResult() }
       );
-    const rectangle = element.getBoundingClientRect();
-    const left = Math.max(0, rectangle.left),
-      right = Math.min(innerWidth, rectangle.right);
-    const top = Math.max(0, rectangle.top),
-      bottom = Math.min(innerHeight, rectangle.bottom);
+    const rectangle = placed(element);
+    const left = Math.max(rectangle.clip.left, rectangle.left),
+      right = Math.min(rectangle.clip.right, rectangle.right);
+    const top = Math.max(rectangle.clip.top, rectangle.top),
+      bottom = Math.min(rectangle.clip.bottom, rectangle.bottom);
     if (right <= left || bottom <= top)
       return failure("Element is outside the viewport.");
     const x = (left + right) / 2,
       y = (top + bottom) / 2;
-    const hit = document.elementFromPoint(x, y);
-    if (!hit || (hit !== element && !element.contains(hit)))
+    const hit = hitAt(element, x, y);
+    if (!hit || !within(element, hit))
       return failure("Another element covers the target.", "element_obscured");
     return { ok: true, x, y, ...reboundResult() };
   }
   if (element.hasAttribute("readonly")) return failure("Element is read only.");
   const value = payload.value as string;
   if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement ||
-    element instanceof HTMLSelectElement
+    inputElement(element) ||
+    textAreaElement(element) ||
+    selectElement(element)
   ) {
     const validateValue = () => {
-      if (element instanceof HTMLInputElement) {
+      if (inputElement(element)) {
         if (
           ![
             "text",
@@ -1494,7 +1717,7 @@ export function pageOperation(
             "invalid_value",
           );
       }
-      if (element instanceof HTMLSelectElement) {
+      if (selectElement(element)) {
         if (element.multiple)
           return failure("Multiple selects do not support fill.");
         const matches = Array.from(element.options).filter(
@@ -1511,12 +1734,11 @@ export function pageOperation(
     };
     const invalidValue = validateValue();
     if (invalidValue) return invalidValue;
-    const prototype =
-      element instanceof HTMLInputElement
-        ? HTMLInputElement.prototype
-        : element instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLSelectElement.prototype;
+    const prototype = inputElement(element)
+      ? HTMLInputElement.prototype
+      : textAreaElement(element)
+        ? HTMLTextAreaElement.prototype
+        : HTMLSelectElement.prototype;
     element.focus({ preventScroll: true });
     if (
       !visible(element) ||

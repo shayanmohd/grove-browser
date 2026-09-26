@@ -859,6 +859,59 @@ describe("local automation socket", () => {
     );
   });
 
+  it("refuses a control inside a frame from another origin as a conflict, before any input", async () => {
+    const { tab } = await createPage();
+    controller.contents.result = {
+      ok: false,
+      code: "cross_origin_frame",
+      error:
+        "This control is inside a frame from another origin, which Kamapathy cannot read. Ask the person to continue there.",
+    };
+    for (const [route, body] of [
+      ["click", { ref: "@e2" }],
+      ["fill", { ref: "@e2", value: "card" }],
+      ["drag", { source: { ref: "@e1" }, target: { ref: "@e2" } }],
+    ] as const) {
+      const response = await request(`/tabs/${tab.id}/${route}`, "POST", body);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe("cross_origin_frame");
+    }
+    expect(controller.contents.inputs).toEqual([]);
+    controller.contents.result = {
+      url: "https://example.com/",
+      title: "Example",
+      text: "Checkout",
+      interactables: [
+        {
+          index: 0,
+          ref: "@e1",
+          tag: "button",
+          role: "button",
+          label: "Pay",
+          selector: "button",
+          disabled: false,
+          frame: "0/1",
+        },
+        {
+          index: 1,
+          ref: "@e2",
+          tag: "iframe",
+          role: "iframe",
+          label: "Card details",
+          selector: "#card",
+          disabled: false,
+          crossOrigin: true,
+        },
+      ],
+      truncated: false,
+    };
+    const snapshot = await (await request(`/tabs/${tab.id}/snapshot`)).json();
+    expect(snapshot.interactables.map((control: any) => control.frame)).toEqual(
+      ["0/1", undefined],
+    );
+    expect(snapshot.interactables[1].crossOrigin).toBe(true);
+  });
+
   it("validates an entire batch before performing any action", async () => {
     const { tab } = await createPage();
     const response = await request(`/tabs/${tab.id}/actions`, "POST", {
