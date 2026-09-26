@@ -1743,6 +1743,30 @@ try {
     checked(
       "macOS window recreation attaches exactly one session download listener",
     );
+    // Closing the last empty tab of the space you are in closes the window.
+    state = await page.evaluate(() => window.kamapathy.getState());
+    const [keep, ...others] = state.tabs.filter(
+      (tab) => tab.spaceId === state.activeSpaceId,
+    );
+    for (const tab of others)
+      await page.evaluate(
+        (id) => window.kamapathy.dispatch({ type: "tab:close", id }),
+        tab.id,
+      );
+    await page.evaluate(
+      (id) => window.kamapathy.dispatch({ type: "tab:navigate", id, url: "" }),
+      keep.id,
+    );
+    await page.evaluate(
+      (id) => window.kamapathy.dispatch({ type: "tab:close", id }),
+      keep.id,
+    );
+    await poll(
+      async () =>
+        (await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)) === 0,
+      { label: "the window to close with its last empty tab" },
+    );
+    checked("closing the last empty tab closes the window");
   }
   console.log(`Desktop smoke passed: ${checks} checks.`);
 } catch (error) {

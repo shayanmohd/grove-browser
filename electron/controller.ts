@@ -1015,6 +1015,18 @@ export class BrowserController {
       }
       case "tab:close": {
         const tab = this.getTab(action.id);
+        // Closing the last, empty tab of a space you use closes the window,
+        // as in other browsers. Agents close their tabs through the API.
+        if (
+          tab.url === HOME_URL &&
+          this.getSpace(tab.spaceId).kind === "personal" &&
+          !this.state.tabs.some(
+            (item) => item.spaceId === tab.spaceId && item.id !== tab.id,
+          )
+        ) {
+          if (!this.window.isDestroyed()) this.window.close();
+          break;
+        }
         this.closedTabs.unshift({ ...tab });
         this.closedTabs = this.closedTabs.slice(0, 20);
         const index = this.state.tabs.indexOf(tab);

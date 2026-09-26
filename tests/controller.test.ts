@@ -116,8 +116,10 @@ function controller() {
     getContentSize: () => number[];
     isVisible: () => boolean;
     isMinimized: () => boolean;
+    close: ReturnType<typeof vi.fn>;
   };
   window.webContents = new FakeContents();
+  window.close = vi.fn();
   window.contentView = { addChildView: vi.fn(), removeChildView: vi.fn() };
   window.isDestroyed = () => false;
   window.getContentSize = () => [1400, 900];
@@ -450,6 +452,7 @@ describe("native browser lifecycle", () => {
     const browser = controller();
     const original = browser.state.tabs[0];
     original.title = "Reopen me";
+    original.url = "https://example.com/reopen";
     await browser.dispatch({ type: "tab:close", id: original.id });
     while (browser.state.tabs.length < 200)
       browser.state.tabs.push(newTab("personal"));
@@ -471,6 +474,26 @@ describe("native browser lifecycle", () => {
     ).toBe("Reopen me");
   });
 
+  it("closes the window when the last tab of a personal space is an empty new tab", async () => {
+    const browser = controller();
+    const only = browser.state.tabs.find((tab) => tab.spaceId === "personal")!;
+    await browser.dispatch({ type: "tab:navigate", id: only.id, url: "https://example.com/" });
+    await browser.dispatch({ type: "tab:close", id: only.id });
+    expect(browser.window.close).not.toHaveBeenCalled();
+    const replacement = browser.state.tabs.find((tab) => tab.spaceId === "personal")!;
+    expect(replacement.url).toBe(HOME_URL);
+    await browser.dispatch({ type: "tab:close", id: replacement.id });
+    expect(browser.window.close).toHaveBeenCalledOnce();
+    expect(browser.state.tabs.some((tab) => tab.id === replacement.id)).toBe(true);
+  });
+  it("never closes the window for an agent space's last tab", async () => {
+    const browser = controller();
+    const space = browser.createAgentSpace("Task");
+    const only = browser.state.tabs.find((tab) => tab.spaceId === space.id)!;
+    await browser.dispatch({ type: "tab:close", id: only.id });
+    expect(browser.window.close).not.toHaveBeenCalled();
+    expect(browser.state.tabs.filter((tab) => tab.spaceId === space.id)).toHaveLength(1);
+  });
   it("selects the neighboring tab within its own space after closing a tab", async () => {
     const browser = controller();
     const work = browser.state.tabs.find((tab) => tab.spaceId === "work")!;

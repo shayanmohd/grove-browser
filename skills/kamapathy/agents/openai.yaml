@@ -1,4 +1,4 @@
 interface:
   display_name: "Kamapathy Browser"
   short_description: "Browse in Kamapathy with compact snapshots and batches"
-  default_prompt: "Use $kamapathy to complete this browser task in an isolated Kamapathy space."
+  default_prompt: "Use $kamapathy to complete this browser task in its own Kamapathy space."
