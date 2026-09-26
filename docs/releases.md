@@ -14,6 +14,6 @@ This workflow transfers installers within GitHub's infrastructure, avoiding depe
 
 ## The website
 
-[kamapathy.app](https://kamapathy.app) is the static site in `site/`, served by Cloudflare Pages. Connect this repository to a Pages project with no build command and `site` as the output directory, then add `kamapathy.app` as a custom domain. Pages rebuilds the site on every push to `main`.
+[kamapathy.app](https://kamapathy.app) is the static site in `site/`, served by Cloudflare Pages. Deploy it by direct upload with `npx wrangler pages deploy site --project-name kamapathy`, which publishes the folder as it is, or connect this repository to the Pages project with no build command and `site` as the output directory so Pages rebuilds on every push to `main`. Either way, add `kamapathy.app` as the project's custom domain.
 
 The download buttons read the newest published release from the GitHub API and link straight to its files, so publishing a release updates the site without a deploy. If the API is unreachable, the buttons fall back to the releases page.

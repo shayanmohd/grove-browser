@@ -58,8 +58,8 @@ linux:
   syncDesktopName: true
   icon: build/icon.png
   category: Network
-  synopsis: A focused browser with spaces for people and agents
-  description: Browse with tabs across the top, isolated spaces, split view, and an optional local automation API.
+  synopsis: A calm browser you share with your agents
+  description: Browse with tabs across the top, spaces that share or separate sign-ins, split view, and a local agent API.
   maintainer: Kamapathy contributors
   vendor: Kamapathy contributors
   target:

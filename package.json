@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "productName": "Kamapathy",
   "desktopName": "app.kamapathy.browser.desktop",
-  "description": "A focused, cross-platform browser with isolated spaces for people and agents.",
+  "description": "A calm desktop browser you share with your agents.",
   "homepage": "https://github.com/shayanmohd/kamapathy",
   "author": "Kamapathy contributors",
   "license": "MIT",

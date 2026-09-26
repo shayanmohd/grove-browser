@@ -10,8 +10,8 @@ flowchart LR
   Agent[Local agent client] --> API[Local socket API, same account]
   API --> Main
   Main --> Views[Native WebContentsView pages]
-  Views --> Personal[Persistent personal partitions]
-  Views --> Temporary[Temporary agent partitions]
+  Views --> Shared[Shared persistent partition]
+  Views --> Separate[Separate partitions per space]
   Main --> State[Local state file]
   Main --> UI
 ```
@@ -28,11 +28,11 @@ The renderer reports the rectangle reserved for web content. The main process po
 
 `shared/types.ts` defines the browser state, spaces, tabs, settings, actions, and bridge contract. `shared/url.ts` normalizes addresses and search text while rejecting unsupported schemes and URL credentials. Native navigation also validates destinations.
 
-Each personal space has a persistent Electron session partition. Its cookies and origin storage remain separate from other spaces and survive restart. Agent spaces use temporary partitions and are excluded from session restoration. This is session separation inside one desktop application, not operating system user isolation.
+Spaces share one persistent Electron session partition by default, `persist:space-personal`, so cookies and sign-ins made in any shared space are available in every other shared space and survive restart. Each space records its choice in `signIns`. A personal space with separate sign-ins uses `persist:space-<id>`, persistent and its own. An agent space with separate sign-ins uses a temporary in-memory partition, `agent-<run>-<id>`, that disappears when Kamapathy quits; an agent space is separate when the Isolate agent spaces setting is on or when the API asked for an isolated space. Session handlers for permissions and downloads are attached once per partition and resolve the space from the page that asked, so agent spaces deny both on the shared session too, and permission grants are keyed by space, origin, and permission. A personal space can switch between shared and separate later; its tabs reload in the new partition, and a separate partition it leaves behind is cleared. Deleting a space clears only a partition that space alone used. Agent spaces are excluded from session restoration. This is session separation inside one desktop application, not operating system user isolation.
 
-The application persists personal spaces and tabs, bookmarks, personal browsing history, and settings in `browser-state.json` in its Electron user data directory. `KAMAPATHY_USER_DATA` can override that directory for testing. Writes use a temporary file and rename. Restored state is validated before use. Downloads and the live activity feed are runtime state. Agent visits are excluded from the saved history. Chromium maintains page storage separately from the JSON application state. See [Electron's session documentation](https://www.electronjs.org/docs/latest/api/session) for partition behavior.
+The application persists personal spaces and tabs, bookmarks, personal browsing history, and settings in `browser-state.json` in its Electron user data directory. `KAMAPATHY_USER_DATA` can override that directory for testing. Writes use a temporary file and rename. Restored state is validated before use. Downloads and the live activity feed are runtime state. Agent visits are excluded from the saved history. Bookmarks and history imported from another browser go through `electron/import.ts`, a Node module that reads Chromium, Firefox, and Safari files, and merge into the same state deduplicated by URL and capped at 1000 each; `shared/topsites.ts` ranks that history for the welcome dialog. Chromium maintains page storage separately from the JSON application state. See [Electron's session documentation](https://www.electronjs.org/docs/latest/api/session) for partition behavior.
 
-Agent spaces start with a fresh session. They do not inherit the user's existing cookies or another browser's sign ins. API operations are restricted to spaces created through the current server instance or explicitly granted by the user in Kamapathy. Ownership controls whether the automation API may operate a space. Taking control changes ownership to the human and prevents subsequent agent reads and actions on that space until the human returns control or the agent takes it back through the API's resume route. Turning agent access off stops all automation. The [automation reference](automation.md) documents the API boundary in detail.
+Agent spaces start on the shared session unless isolated, so an agent can use the sites the person has signed in to, in a space the person can see. API operations are restricted to spaces created through the current server instance or explicitly granted by the user in Kamapathy. Ownership controls whether the automation API may operate a space. Taking control changes ownership to the human and prevents subsequent agent reads and actions on that space until the human returns control or the agent takes it back through the API's resume route. Turning agent access off stops all automation. The [automation reference](automation.md) documents the API boundary in detail.
 
 ## Web preview
 
@@ -56,7 +56,9 @@ Signing and publishing are disabled in the development configuration. macOS also
 | -------------------- | ------------------------------------------------------------------------ |
 | `src/`               | Shared browser UI, dialogs, command palette, styling, web preview bridge |
 | `shared/`            | Data contracts, initial state, address handling                          |
+| `shared/topsites.ts` | Ranks history and bookmarks into the welcome dialog's top sites          |
 | `electron/`          | Native browser, preload, persistence, automation server                  |
+| `electron/import.ts` | Reads bookmarks and history from other browsers, without Electron        |
 | `scripts/`           | Native smoke test, copy validation, development helpers                  |
 | `tests/`             | Behavior and boundary tests                                              |
 | `build/`             | Native application icons                                                 |

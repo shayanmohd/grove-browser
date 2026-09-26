@@ -59,7 +59,7 @@ KAMAPATHY_TEST_PUBLIC=1 xvfb-run -a npm run test:skill
 ## Manual checks
 
 1. Open a normal website, follow a link, and use back, forward, reload, find, and zoom.
-2. Create a space and confirm its site login is separate from another space.
+2. Sign in to a site, create a space, and confirm the site is still signed in there. Turn on Separate sign-ins for that space from the Spaces popover and confirm the site asks you to sign in again.
 3. Open two pages in split view, click each pane, and confirm address and zoom controls follow that pane.
 4. Bookmark a page, restart Kamapathy, and check that your personal tabs and bookmark return.
 5. Try a download, a new-window link, light and dark themes, and display scaling.
