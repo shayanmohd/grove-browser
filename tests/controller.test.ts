@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BrowserWindow } from "electron";
 import { dialog, session, shell, WebContentsView } from "electron";
@@ -105,7 +108,7 @@ class FakeView {
 }
 const sessions = new Map<string, FakeSession>();
 const controllers: BrowserController[] = [];
-function controller() {
+function controller(statePath = "unused-test-state.json") {
   const window = new EventEmitter() as EventEmitter & {
     webContents: FakeContents;
     contentView: {
@@ -128,7 +131,7 @@ function controller() {
   const result = new BrowserController(
     window as unknown as BrowserWindow,
     initialState(),
-    "unused-test-state.json",
+    statePath,
   );
   result.setContentBounds({
     x: 200,
@@ -925,6 +928,52 @@ describe("sign-ins", () => {
         signIns: "separate",
       }),
     ).rejects.toThrow("Only personal spaces");
+  });
+});
+
+describe("partition housekeeping", () => {
+  it("waits for a pending clear before a space separates its sign-ins again", async () => {
+    const browser = controller();
+    browser.state.spaces[1].signIns = "separate";
+    await browser.dispatch({ type: "space:activate", id: "work" });
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    const separate = sessions.get("persist:space-work")!;
+    let finishClear!: () => void;
+    separate.clearStorageData.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishClear = resolve)),
+    );
+    const toShared = browser.dispatch({
+      type: "space:sign-ins",
+      id: "work",
+      signIns: "shared",
+    });
+    await vi.waitFor(() => expect(separate.clearStorageData).toHaveBeenCalled());
+    expect(separate.listenerCount("will-download")).toBe(0);
+    let backAgain = false;
+    const toSeparate = browser
+      .dispatch({ type: "space:sign-ins", id: "work", signIns: "separate" })
+      .then(() => (backAgain = true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(backAgain).toBe(false);
+    finishClear();
+    await toShared;
+    await toSeparate;
+    expect(browser.state.spaces[1].signIns).toBe("separate");
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.org/" });
+    expect(separate.listenerCount("will-download")).toBe(1);
+    const check = separate.setPermissionCheckHandler.mock.lastCall![0];
+    expect(typeof check).toBe("function");
+  });
+  it("clears the partition a shared space used before it shared sign-ins when it is deleted", async () => {
+    const root = mkdtempSync(join(tmpdir(), "kamapathy-partitions-"));
+    mkdirSync(join(root, "Partitions", "space-work"), { recursive: true });
+    const browser = controller(join(root, "browser-state.json"));
+    await browser.dispatch({ type: "space:delete", id: "work" });
+    expect(session.fromPartition).toHaveBeenCalledWith("persist:space-work");
+    expect(sessions.get("persist:space-work")!.clearStorageData).toHaveBeenCalledOnce();
+    expect(sessions.get("persist:space-personal")?.clearStorageData ?? vi.fn()).not.toHaveBeenCalled();
+    rmSync(root, { recursive: true, force: true });
   });
 });
 

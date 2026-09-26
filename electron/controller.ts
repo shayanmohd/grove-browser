@@ -7,9 +7,10 @@ import {
   WebContentsView,
 } from "electron";
 import type { NativeImage, Session, WebContents } from "electron";
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { HOME_URL, newTab, openingTab } from "../shared/state";
 import { googleSignInFallback, isWebUrl, normalizeUrl } from "../shared/url";
 import type {
@@ -106,6 +107,7 @@ export class BrowserController {
   // Sessions and their cleanups are keyed by partition, grants by space.
   private sessions = new Map<string, Session>();
   private sessionCleanups = new Map<string, () => void>();
+  private discards = new Map<string, Promise<void>>();
   private grants = new Set<string>();
   private pendingLoads = new Map<string, symbol>();
   private listeners = new Set<(state: BrowserState) => void>();
@@ -518,17 +520,38 @@ export class BrowserController {
     return browsingSession;
   }
 
-  // Removes everything sites stored in a partition only one space used.
-  private async discardPartition(partition: string): Promise<void> {
+  // Removes everything sites stored in a partition only one space used. The
+  // handlers come off first, so a space that reuses the partition meanwhile
+  // gets its own.
+  private discardPartition(partition: string): Promise<void> {
+    const pending = this.discards.get(partition);
+    if (pending) return pending;
     const oldSession = this.sessionFor(partition);
-    try {
-      await oldSession.clearStorageData();
-      await oldSession.clearCache();
-    } finally {
-      this.sessionCleanups.get(partition)?.();
-      this.sessionCleanups.delete(partition);
-      this.sessions.delete(partition);
-    }
+    this.sessionCleanups.get(partition)?.();
+    this.sessionCleanups.delete(partition);
+    this.sessions.delete(partition);
+    const discard = (async () => {
+      try {
+        await oldSession.clearStorageData();
+        await oldSession.clearCache();
+      } finally {
+        this.discards.delete(partition);
+      }
+    })();
+    this.discards.set(partition, discard);
+    return discard;
+  }
+
+  // The partition a space had on disk before it shared sign-ins, if any.
+  private ownPartition(space: Space): string | undefined {
+    const own = `persist:space-${space.id}`;
+    if (own === SHARED_PARTITION) return undefined;
+    if (space.signIns === "separate") return own;
+    return existsSync(
+      join(dirname(this.statePath), "Partitions", `space-${space.id}`),
+    )
+      ? own
+      : undefined;
   }
 
   getWebContents(tabId: string): WebContents | undefined {
@@ -1185,6 +1208,8 @@ export class BrowserController {
         if (space.kind !== "personal")
           throw new Error("Only personal spaces can change their sign-ins.");
         if (space.signIns === signIns) break;
+        // A switch back while the old partition is still being cleared waits.
+        await this.discards.get(`persist:space-${space.id}`);
         const previous = this.partitionFor(space);
         space.signIns = signIns;
         // Its pages reload in the new session.
@@ -1250,9 +1275,11 @@ export class BrowserController {
             )!,
           );
         const partition = this.partitionFor(space);
+        const own = this.ownPartition(space);
         this.emit();
         if (partition !== SHARED_PARTITION)
           await this.discardPartition(partition);
+        else if (own) await this.discardPartition(own);
         break;
       }
       case "bookmark:add": {
