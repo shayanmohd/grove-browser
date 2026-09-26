@@ -3,6 +3,7 @@ import {
   CaretRight,
   Check,
   DotsThree,
+  LockSimple,
   PencilSimple,
   Plus,
   Trash,
@@ -18,7 +19,13 @@ import {
   spaceColors,
   type AgentStatus,
 } from "../lib/spaces";
-import { agentBarCopy, overviewCopy, spacesCopy, statusCopy } from "../copy";
+import {
+  agentBarCopy,
+  overviewCopy,
+  signInsCopy,
+  spacesCopy,
+  statusCopy,
+} from "../copy";
 import { Popover } from "./Popover";
 import "./Spaces.css";
 
@@ -296,6 +303,24 @@ function SpaceRow({
               />
             ))}
           </div>
+          {space.kind === "personal" && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={space.signIns === "separate"}
+              onClick={() =>
+                void dispatch({
+                  type: "space:sign-ins",
+                  id: space.id,
+                  signIns: space.signIns === "separate" ? "shared" : "separate",
+                })
+              }
+            >
+              <LockSimple size={14} />
+              <span>{signInsCopy.label}</span>
+              {space.signIns === "separate" && <Check size={14} />}
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

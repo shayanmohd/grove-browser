@@ -1,11 +1,14 @@
 export type Theme = "system" | "light" | "dark";
 export type SpaceColor = "green" | "blue" | "orange" | "purple";
+export type SignIns = "shared" | "separate";
 export interface Space {
   id: string;
   name: string;
   color: SpaceColor;
   kind: "personal" | "agent";
   owner: "human" | "agent";
+  // Shared spaces use one session; separate ones keep their own cookies.
+  signIns: SignIns;
   createdAt: number;
 }
 export interface Tab {
@@ -31,6 +34,7 @@ export interface HistoryEntry {
   title: string;
   url: string;
   visitedAt: number;
+  visits?: number;
 }
 export interface Download {
   id: string;
@@ -53,6 +57,39 @@ export interface Settings {
   restoreSession: boolean;
   showBookmarksBar: boolean;
   automationEnabled: boolean;
+  isolateAgentSpaces: boolean;
+  welcomed: boolean;
+}
+export interface ImportProfile {
+  id: string;
+  name: string;
+}
+export interface ImportSource {
+  id: string;
+  name: string;
+  profiles: ImportProfile[];
+  default: boolean;
+}
+export interface ImportedBookmark {
+  title: string;
+  url: string;
+}
+export interface ImportedVisit {
+  title: string;
+  url: string;
+  visitedAt: number;
+  visits: number;
+}
+export interface ImportRequest {
+  source: string;
+  profile?: string;
+  bookmarks: boolean;
+  history: boolean;
+}
+export interface ImportOutcome {
+  bookmarks: number;
+  history: number;
+  warnings: string[];
 }
 export interface BrowserState {
   spaces: Space[];
@@ -92,7 +129,9 @@ export type BrowserAction =
       name: string;
       color: SpaceColor;
       kind: "personal" | "agent";
+      signIns?: SignIns;
     }
+  | { type: "space:sign-ins"; id: string; signIns: SignIns }
   | { type: "space:activate"; id: string }
   | { type: "space:rename"; id: string; name: string }
   | { type: "space:color"; id: string; color: SpaceColor }
@@ -102,6 +141,11 @@ export type BrowserAction =
   | { type: "bookmark:remove"; id: string }
   | { type: "bookmark:update"; id: string; url: string; title: string }
   | { type: "history:clear" }
+  | {
+      type: "import:apply";
+      bookmarks: ImportedBookmark[];
+      history: ImportedVisit[];
+    }
   | { type: "settings:update"; settings: Partial<Settings> }
   | { type: "download:show"; id: string }
   | { type: "page:find"; text: string; forward?: boolean }
@@ -134,4 +178,6 @@ export interface KamapathyBridge {
   unfreeze(): Promise<void>;
   thumbnails(): Promise<Record<string, string>>;
   windowControl(action: "minimize" | "maximize" | "close"): void;
+  importSources(): Promise<ImportSource[]>;
+  importBrowserData(request: ImportRequest): Promise<ImportOutcome>;
 }

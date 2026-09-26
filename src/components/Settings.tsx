@@ -18,12 +18,14 @@ export function Settings({
   state,
   dispatch,
   focus,
+  onImport,
 }: {
   open: boolean;
   onClose: () => void;
   state: BrowserState;
   dispatch: (action: BrowserAction) => void;
   focus?: "agents";
+  onImport: () => void;
 }) {
   const agentSwitch = useRef<HTMLButtonElement>(null);
   const warning =
@@ -144,6 +146,20 @@ export function Settings({
             <span />
           </button>
         </div>
+        <div className="setting-row">
+          <div>
+            <strong>{settingsCopy.import}</strong>
+            <p>{settingsCopy.importNote}</p>
+          </div>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={!isDesktop}
+            onClick={onImport}
+          >
+            {settingsCopy.importButton}
+          </button>
+        </div>
       </section>
       <section className="settings-section" aria-labelledby="settings-agents">
         <h3 id="settings-agents">{settingsCopy.agents}</h3>
@@ -167,6 +183,28 @@ export function Settings({
                 type: "settings:update",
                 settings: {
                   automationEnabled: !state.settings.automationEnabled,
+                },
+              })
+            }
+          >
+            <span />
+          </button>
+        </div>
+        <div className="setting-row">
+          <div>
+            <strong>{settingsCopy.isolate}</strong>
+            <p>{settingsCopy.isolateNote}</p>
+          </div>
+          <button
+            role="switch"
+            aria-label={settingsCopy.isolate}
+            aria-checked={state.settings.isolateAgentSpaces}
+            className={`toggle ${state.settings.isolateAgentSpaces ? "on" : ""}`}
+            onClick={() =>
+              update({
+                type: "settings:update",
+                settings: {
+                  isolateAgentSpaces: !state.settings.isolateAgentSpaces,
                 },
               })
             }

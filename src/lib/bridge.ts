@@ -202,6 +202,10 @@ export function createPreviewBridge(): KamapathyBridge {
           color: action.color,
           kind: action.kind,
           owner: "human" as const,
+          signIns:
+            action.signIns === "separate"
+              ? ("separate" as const)
+              : ("shared" as const),
           createdAt: Date.now(),
         };
         state.spaces.push(space);
@@ -242,6 +246,11 @@ export function createPreviewBridge(): KamapathyBridge {
           throw new Error("Invalid space options.");
         const space = state.spaces.find((item) => item.id === action.id);
         if (space) space.color = action.color;
+        break;
+      }
+      case "space:sign-ins": {
+        const space = state.spaces.find((item) => item.id === action.id);
+        if (space?.kind === "personal") space.signIns = action.signIns;
         break;
       }
       case "space:delete": {
@@ -326,6 +335,7 @@ export function createPreviewBridge(): KamapathyBridge {
       case "page:screenshot":
       case "page:zoom":
       case "download:show":
+      case "import:apply":
         throw new Error("This feature is available in the desktop app.");
     }
     return emit();
@@ -346,6 +356,10 @@ export function createPreviewBridge(): KamapathyBridge {
     unfreeze: async () => {},
     thumbnails: async () => ({}),
     windowControl: () => {},
+    importSources: async () => [],
+    importBrowserData: async () => {
+      throw new Error("Install the desktop app to import from another browser.");
+    },
   };
 }
 export const bridge: KamapathyBridge = window.kamapathy || createPreviewBridge();

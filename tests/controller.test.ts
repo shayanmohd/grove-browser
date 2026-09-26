@@ -304,6 +304,7 @@ describe("native browser lifecycle", () => {
 
   it("rejects a pending permission when the requesting space is deleted", async () => {
     const browser = controller();
+    browser.state.spaces[1].signIns = "separate";
     const tab = browser.state.tabs.find((item) => item.spaceId === "work")!;
     await browser.dispatch({
       type: "tab:navigate",
@@ -662,14 +663,24 @@ describe("native browser lifecycle", () => {
     );
   });
 
-  it("clears a deleted personal partition even if no tab opened it this launch", async () => {
+  it("clears a deleted separate partition even if no tab opened it this launch", async () => {
     const browser = controller();
+    browser.state.spaces[1].signIns = "separate";
     const existing = session.fromPartition(
       "persist:space-work",
     ) as unknown as FakeSession;
     await browser.dispatch({ type: "space:delete", id: "work" });
     expect(existing.clearStorageData).toHaveBeenCalledOnce();
     expect(existing.clearCache).toHaveBeenCalledOnce();
+  });
+  it("keeps the shared session when a space that shares sign-ins is deleted", async () => {
+    const browser = controller();
+    const shared = session.fromPartition(
+      "persist:space-personal",
+    ) as unknown as FakeSession;
+    await browser.dispatch({ type: "space:delete", id: "work" });
+    expect(shared.clearStorageData).not.toHaveBeenCalled();
+    expect(session.fromPartition).not.toHaveBeenCalledWith("persist:space-work");
   });
 
   it("removes session download listeners when its window closes", async () => {
@@ -685,6 +696,279 @@ describe("native browser lifecycle", () => {
     expect(partition.listenerCount("will-download")).toBe(1);
     browser.dispose();
     expect(partition.listenerCount("will-download")).toBe(0);
+  });
+});
+
+describe("sign-ins", () => {
+  async function navigate(browser: BrowserController, id: string, url: string) {
+    await browser.dispatch({ type: "tab:navigate", id, url });
+    return contents(browser, id);
+  }
+  it("shares one session across personal spaces and agent spaces by default", async () => {
+    const browser = controller();
+    await navigate(browser, browser.state.activeTabId, "https://a.example/");
+    await browser.dispatch({ type: "space:activate", id: "work" });
+    await navigate(browser, browser.state.activeTabId, "https://b.example/");
+    await browser.dispatch({
+      type: "space:create",
+      kind: "agent",
+      color: "purple",
+      name: "Task",
+    });
+    await navigate(browser, browser.state.activeTabId, "https://c.example/");
+    const agent = browser.createAgentSpace("Api task");
+    await navigate(
+      browser,
+      browser.state.tabs.find((tab) => tab.spaceId === agent.id)!.id,
+      "https://d.example/",
+    );
+    expect([...sessions.keys()]).toEqual(["persist:space-personal"]);
+    expect(browser.state.spaces.map((space) => space.signIns)).toEqual([
+      "shared",
+      "shared",
+      "shared",
+      "shared",
+    ]);
+    expect(browser.state.activity[0].message).toBe(
+      "Api task started with your sign-ins.",
+    );
+  });
+  it("gives separate spaces and isolated agents partitions of their own", async () => {
+    const browser = controller();
+    await browser.dispatch({
+      type: "space:create",
+      kind: "personal",
+      color: "blue",
+      name: "Private",
+      signIns: "separate",
+    });
+    const separate = browser.state.activeSpaceId;
+    await navigate(browser, browser.state.activeTabId, "https://a.example/");
+    const flagged = browser.createAgentSpace("Clean", { isolated: true });
+    await navigate(
+      browser,
+      browser.state.tabs.find((tab) => tab.spaceId === flagged.id)!.id,
+      "https://b.example/",
+    );
+    await browser.dispatch({
+      type: "settings:update",
+      settings: { isolateAgentSpaces: true },
+    });
+    const bySetting = browser.createAgentSpace("Also clean");
+    await navigate(
+      browser,
+      browser.state.tabs.find((tab) => tab.spaceId === bySetting.id)!.id,
+      "https://c.example/",
+    );
+    expect([...sessions.keys()]).toEqual([
+      `persist:space-${separate}`,
+      expect.stringMatching(new RegExp(`^agent-.*-${flagged.id}$`)),
+      expect.stringMatching(new RegExp(`^agent-.*-${bySetting.id}$`)),
+    ]);
+    expect(bySetting.signIns).toBe("separate");
+    expect(browser.state.activity[0].message).toBe(
+      "Also clean started in an isolated session.",
+    );
+    await expect(
+      browser.dispatch({
+        type: "space:create",
+        kind: "personal",
+        color: "blue",
+        name: "Odd",
+        signIns: "private" as "shared",
+      }),
+    ).rejects.toThrow("Invalid sign-in option.");
+  });
+  it("blocks agent downloads on the shared session and records personal ones", async () => {
+    const browser = controller();
+    const personal = await navigate(
+      browser,
+      browser.state.activeTabId,
+      "https://a.example/",
+    );
+    await browser.dispatch({
+      type: "space:create",
+      kind: "agent",
+      color: "purple",
+      name: "Task",
+    });
+    const agent = await navigate(
+      browser,
+      browser.state.activeTabId,
+      "https://b.example/",
+    );
+    const shared = sessions.get("persist:space-personal")!;
+    const blocked = { preventDefault: vi.fn() };
+    const item = {
+      setSaveDialogOptions: vi.fn(),
+      getFilename: () => "report.pdf",
+      getTotalBytes: () => 10,
+      on: vi.fn(),
+      once: vi.fn(),
+    };
+    shared.emit("will-download", blocked, item, agent);
+    expect(blocked.preventDefault).toHaveBeenCalledOnce();
+    expect(browser.state.downloads).toHaveLength(0);
+    expect(browser.state.activity[0].message).toBe(
+      "A download was blocked in the agent space.",
+    );
+    const allowed = { preventDefault: vi.fn() };
+    shared.emit("will-download", allowed, item, personal);
+    expect(allowed.preventDefault).not.toHaveBeenCalled();
+    expect(browser.state.downloads[0].filename).toBe("report.pdf");
+    const unknown = { preventDefault: vi.fn() };
+    shared.emit("will-download", unknown, item, {});
+    expect(unknown.preventDefault).toHaveBeenCalledOnce();
+  });
+  it("keeps a permission grant inside the space that allowed it", async () => {
+    const browser = controller();
+    const personal = await navigate(
+      browser,
+      browser.state.activeTabId,
+      "https://example.com/",
+    );
+    personal.commit("https://example.com/");
+    await browser.dispatch({ type: "space:activate", id: "work" });
+    const work = await navigate(
+      browser,
+      browser.state.activeTabId,
+      "https://example.com/",
+    );
+    work.commit("https://example.com/");
+    const shared = sessions.get("persist:space-personal")!;
+    const request = shared.setPermissionRequestHandler.mock.calls[0][0];
+    const check = shared.setPermissionCheckHandler.mock.calls[0][0];
+    vi.mocked(dialog.showMessageBox).mockResolvedValueOnce({
+      response: 1,
+      checkboxChecked: false,
+    });
+    const callback = vi.fn();
+    request(personal, "notifications", callback, {
+      requestingUrl: "https://example.com/",
+      isMainFrame: true,
+    });
+    await vi.waitFor(() => expect(callback).toHaveBeenCalledWith(true));
+    expect(check(personal, "notifications", "https://example.com/", {})).toBe(
+      true,
+    );
+    expect(check(work, "notifications", "https://example.com/", {})).toBe(
+      false,
+    );
+    expect(check(null, "notifications", "https://example.com/", {})).toBe(
+      false,
+    );
+  });
+  it("reloads a space's pages in a partition of its own when it separates its sign-ins, and clears it when it shares again", async () => {
+    const browser = controller();
+    await browser.dispatch({ type: "space:activate", id: "work" });
+    const id = browser.state.activeTabId;
+    const before = await navigate(browser, id, "https://example.com/");
+    await browser.dispatch({
+      type: "space:sign-ins",
+      id: "work",
+      signIns: "separate",
+    });
+    expect(before.destroyed).toBe(true);
+    const after = contents(browser, id);
+    expect(after).not.toBe(before);
+    expect(after.loadURL).toHaveBeenCalledWith("https://example.com/");
+    const separate = sessions.get("persist:space-work")!;
+    expect(separate).toBeDefined();
+    await browser.dispatch({
+      type: "space:sign-ins",
+      id: "work",
+      signIns: "shared",
+    });
+    expect(separate.clearStorageData).toHaveBeenCalledOnce();
+    expect(separate.listenerCount("will-download")).toBe(0);
+    expect(browser.state.spaces[1].signIns).toBe("shared");
+    await expect(
+      browser.dispatch({
+        type: "space:sign-ins",
+        id: "personal",
+        signIns: "shared",
+      }),
+    ).resolves.toBeTruthy();
+    await browser.dispatch({
+      type: "space:create",
+      kind: "agent",
+      color: "purple",
+      name: "Task",
+    });
+    await expect(
+      browser.dispatch({
+        type: "space:sign-ins",
+        id: browser.state.activeSpaceId,
+        signIns: "separate",
+      }),
+    ).rejects.toThrow("Only personal spaces");
+  });
+});
+
+describe("imported browsing data", () => {
+  it("adds bookmarks and history without duplicates and within the limits", async () => {
+    const browser = controller();
+    browser.state.history.push({
+      id: "old",
+      title: "Old title",
+      url: "https://known.example/",
+      visitedAt: 50,
+      visits: 2,
+    });
+    await browser.dispatch({
+      type: "import:apply",
+      bookmarks: [
+        { title: "GitHub", url: "https://github.com" },
+        { title: "New", url: "https://new.example/" },
+        { title: "New", url: "https://new.example/" },
+        { title: "Local", url: "file:///etc/passwd" },
+      ],
+      history: [
+        { title: "Known", url: "https://known.example/", visitedAt: 90, visits: 3 },
+        { title: "", url: "https://fresh.example/", visitedAt: 70, visits: 0 },
+        { title: "Future", url: "https://future.example/", visitedAt: 9e15, visits: 1 },
+      ],
+    });
+    expect(browser.state.bookmarks.map((item) => item.url)).toEqual([
+      "https://github.com",
+      "https://www.figma.com",
+      "https://linear.app",
+      "https://www.notion.so",
+      "https://www.youtube.com",
+      "https://new.example/",
+    ]);
+    expect(browser.state.history.map((item) => item.url)).toEqual([
+      "https://future.example/",
+      "https://known.example/",
+      "https://fresh.example/",
+    ]);
+    expect(browser.state.history[1]).toMatchObject({
+      title: "Known",
+      visitedAt: 90,
+      visits: 5,
+    });
+    expect(browser.state.history[2]).toMatchObject({
+      title: "https://fresh.example/",
+      visits: 1,
+    });
+    expect(browser.state.history[0].visitedAt).toBeLessThanOrEqual(Date.now());
+    await expect(
+      browser.dispatch({
+        type: "import:apply",
+        bookmarks: Array.from({ length: 1001 }, () => ({ title: "x", url: "https://x.example/" })),
+        history: [],
+      }),
+    ).rejects.toThrow("Invalid import.");
+  });
+  it("counts repeat visits to a page", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    contents(browser, id).commit("https://example.com/");
+    expect(browser.state.history[0].visits).toBeUndefined();
+    contents(browser, id).commit("https://example.com/");
+    expect(browser.state.history).toHaveLength(1);
+    expect(browser.state.history[0].visits).toBe(2);
   });
 });
 

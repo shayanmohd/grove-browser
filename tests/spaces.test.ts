@@ -29,6 +29,7 @@ function withAgent(
     color: "purple",
     kind: "agent",
     owner,
+    signIns: "shared",
     createdAt: 0,
   };
   state.spaces.push(space);

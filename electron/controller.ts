@@ -18,6 +18,9 @@ import type {
   BrowserState,
   ContentBounds,
   FrozenFrame,
+  ImportedBookmark,
+  ImportedVisit,
+  SignIns,
   Space,
   SpaceColor,
   Tab,
@@ -25,11 +28,43 @@ import type {
 import { validSettings, writeState } from "./persistence";
 
 const colors: SpaceColor[] = ["green", "blue", "orange", "purple"];
+// Spaces that share sign-ins use the first space's partition, so sign-ins
+// made before shared sessions carry over.
+export const SHARED_PARTITION = "persist:space-personal";
 const cleanText = (value: unknown, maximum = 300): string => {
   if (typeof value !== "string" || value.length > maximum)
     throw new Error("Invalid text value.");
   return value.trim();
 };
+const signInsOf = (value: unknown): SignIns => {
+  if (value === undefined || value === "shared") return "shared";
+  if (value === "separate") return "separate";
+  throw new Error("Invalid sign-in option.");
+};
+// Imported pages, with the same bounds saved state gets on restore.
+function importedPages(value: unknown, now: number): ImportedVisit[] {
+  if (!Array.isArray(value) || value.length > 1000)
+    throw new Error("Invalid import.");
+  const seen = new Set<string>();
+  const pages: ImportedVisit[] = [];
+  for (const item of value as Partial<ImportedVisit>[]) {
+    if (!item || typeof item.url !== "string" || !isWebUrl(item.url))
+      continue;
+    const url = item.url.slice(0, 8192);
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const title =
+      typeof item.title === "string" ? item.title.trim().slice(0, 300) : "";
+    const visitedAt =
+      typeof item.visitedAt === "number" && Number.isFinite(item.visitedAt)
+        ? Math.min(item.visitedAt, now)
+        : now;
+    const visits =
+      Number.isInteger(item.visits) && item.visits! > 0 ? item.visits! : 1;
+    pages.push({ url, title: title || url, visitedAt, visits });
+  }
+  return pages;
+}
 
 const CAPTURE_TIMEOUT = 300;
 // Keeps frames sharp on 2x displays without sending larger captures.
@@ -68,8 +103,10 @@ function jpeg(image: NativeImage, width: number): string {
 export class BrowserController {
   readonly state: BrowserState;
   private views = new Map<string, WebContentsView>();
+  // Sessions and their cleanups are keyed by partition, grants by space.
   private sessions = new Map<string, Session>();
   private sessionCleanups = new Map<string, () => void>();
+  private grants = new Set<string>();
   private pendingLoads = new Map<string, symbol>();
   private listeners = new Set<(state: BrowserState) => void>();
   private closedTabs: Tab[] = [];
@@ -251,25 +288,41 @@ export class BrowserController {
     return tab;
   }
 
-  private sessionFor(space: Space): Session {
-    const existing = this.sessions.get(space.id);
+  private partitionFor(space: Space): string {
+    if (space.signIns === "shared") return SHARED_PARTITION;
+    return space.kind === "agent"
+      ? `agent-${this.runId}-${space.id}`
+      : `persist:space-${space.id}`;
+  }
+
+  // The space a page belongs to. Session handlers need it because spaces
+  // that share sign-ins share the session.
+  private spaceOf(contents: WebContents | null): Space | undefined {
+    if (!contents) return undefined;
+    for (const [id, view] of this.views)
+      if (view.webContents === contents) {
+        const tab = this.state.tabs.find((item) => item.id === id);
+        return tab
+          ? this.state.spaces.find((space) => space.id === tab.spaceId)
+          : undefined;
+      }
+    return undefined;
+  }
+
+  private sessionFor(partition: string): Session {
+    const existing = this.sessions.get(partition);
     if (existing) return existing;
-    const partition =
-      space.kind === "agent"
-        ? `agent-${this.runId}-${space.id}`
-        : `persist:space-${space.id}`;
     const browsingSession = session.fromPartition(partition);
-    this.sessions.set(space.id, browsingSession);
-    const granted = new Set<string>();
-    const permissionKey = (origin: string, permission: string) =>
-      `${origin}|${permission}`;
+    this.sessions.set(partition, browsingSession);
+    const permissionKey = (space: Space, origin: string, permission: string) =>
+      `${space.id}|${origin}|${permission}`;
     const isCurrentSession = () =>
-      !this.destroyed &&
-      this.sessions.get(space.id) === browsingSession &&
-      this.state.spaces.includes(space);
+      !this.destroyed && this.sessions.get(partition) === browsingSession;
     browsingSession.setPermissionCheckHandler(
-      (_contents, permission, origin, details) => {
-        if (space.kind === "agent" || !isCurrentSession()) return false;
+      (contents, permission, origin, details) => {
+        const space = this.spaceOf(contents);
+        if (!space || space.kind === "agent" || !isCurrentSession())
+          return false;
         if (
           permission === "media" &&
           details.mediaType !== "audio" &&
@@ -277,8 +330,9 @@ export class BrowserController {
         )
           return false;
         try {
-          return granted.has(
+          return this.grants.has(
             permissionKey(
+              space,
               new URL(origin).origin,
               permission === "media"
                 ? `media:${details.mediaType}`
@@ -292,7 +346,9 @@ export class BrowserController {
     );
     browsingSession.setPermissionRequestHandler(
       (contents, permission, callback, details) => {
+        const space = this.spaceOf(contents);
         if (
+          !space ||
           space.kind === "agent" ||
           !isCurrentSession() ||
           !contents ||
@@ -350,7 +406,7 @@ export class BrowserController {
             : [permission];
         if (
           requestedPermissions.every((item) =>
-            granted.has(permissionKey(origin, item)),
+            this.grants.has(permissionKey(space, origin, item)),
           )
         ) {
           callback(true);
@@ -386,12 +442,13 @@ export class BrowserController {
               response === 1 &&
               !navigated &&
               isCurrentSession() &&
+              this.state.spaces.includes(space) &&
               !contents.isDestroyed() &&
               !this.window.isDestroyed() &&
               contents.getURL() === requestedPageUrl;
             if (allow)
               for (const item of requestedPermissions)
-                granted.add(permissionKey(origin, item));
+                this.grants.add(permissionKey(space, origin, item));
             callback(allow);
           })
           .catch(() => callback(false))
@@ -400,14 +457,20 @@ export class BrowserController {
           );
       },
     );
-    const onDownload = (event: Electron.Event, item: Electron.DownloadItem) => {
-      if (space.kind === "agent") {
+    const onDownload = (
+      event: Electron.Event,
+      item: Electron.DownloadItem,
+      contents: WebContents,
+    ) => {
+      const space = this.spaceOf(contents);
+      if (!space || space.kind === "agent") {
         event.preventDefault();
-        this.addActivity(
-          space.id,
-          "A download was blocked in the isolated agent space.",
-          "warning",
-        );
+        if (space)
+          this.addActivity(
+            space.id,
+            "A download was blocked in the agent space.",
+            "warning",
+          );
         return;
       }
       item.setSaveDialogOptions({ title: "Save download" });
@@ -445,7 +508,7 @@ export class BrowserController {
       this.emit();
     };
     browsingSession.on("will-download", onDownload);
-    this.sessionCleanups.set(space.id, () => {
+    this.sessionCleanups.set(partition, () => {
       browsingSession.removeListener("will-download", onDownload);
       browsingSession.setPermissionCheckHandler(() => false);
       browsingSession.setPermissionRequestHandler(
@@ -453,6 +516,19 @@ export class BrowserController {
       );
     });
     return browsingSession;
+  }
+
+  // Removes everything sites stored in a partition only one space used.
+  private async discardPartition(partition: string): Promise<void> {
+    const oldSession = this.sessionFor(partition);
+    try {
+      await oldSession.clearStorageData();
+      await oldSession.clearCache();
+    } finally {
+      this.sessionCleanups.get(partition)?.();
+      this.sessionCleanups.delete(partition);
+      this.sessions.delete(partition);
+    }
   }
 
   getWebContents(tabId: string): WebContents | undefined {
@@ -544,7 +620,7 @@ export class BrowserController {
     const space = this.getSpace(tab.spaceId);
     const view = new WebContentsView({
       webPreferences: {
-        session: this.sessionFor(space),
+        session: this.sessionFor(this.partitionFor(space)),
         sandbox: true,
         contextIsolation: true,
         nodeIntegration: false,
@@ -799,6 +875,7 @@ export class BrowserController {
   private recordVisit(tab: Tab): void {
     if (this.getSpace(tab.spaceId).kind === "agent" || !isWebUrl(tab.url))
       return;
+    const previous = this.state.history.find((entry) => entry.url === tab.url);
     this.state.history = this.state.history.filter(
       (entry) => entry.url !== tab.url,
     );
@@ -807,6 +884,7 @@ export class BrowserController {
       title: tab.title,
       url: tab.url,
       visitedAt: Date.now(),
+      ...(previous ? { visits: (previous.visits ?? 1) + 1 } : {}),
     });
     this.state.history = this.state.history.slice(0, 1000);
     this.emit();
@@ -842,7 +920,13 @@ export class BrowserController {
       view.webContents.close({ waitForBeforeUnload: false });
   }
 
-  createAgentSpace(name: string, color: SpaceColor = "purple"): Space {
+  createAgentSpace(
+    name: string,
+    { color = "purple", isolated = false }: {
+      color?: SpaceColor;
+      isolated?: boolean;
+    } = {},
+  ): Space {
     if (this.destroyed) throw new Error("Browser is closing.");
     if (this.state.spaces.length >= 30)
       throw new Error("The maximum of 30 spaces has been reached.");
@@ -854,13 +938,19 @@ export class BrowserController {
       color: colors.includes(color) ? color : "purple",
       kind: "agent",
       owner: "agent",
+      signIns:
+        isolated || this.state.settings.isolateAgentSpaces
+          ? "separate"
+          : "shared",
       createdAt: Date.now(),
     };
     this.state.spaces.push(space);
     this.state.tabs.push(newTab(space.id));
     this.addActivity(
       space.id,
-      `${space.name} started in an isolated session.`,
+      space.signIns === "shared"
+        ? `${space.name} started with your sign-ins.`
+        : `${space.name} started in an isolated session.`,
       "info",
     );
     return space;
@@ -1037,9 +1127,13 @@ export class BrowserController {
         if (this.state.tabs.length >= 200)
           throw new Error("The maximum of 200 tabs has been reached.");
         const name = cleanText(action.name, 48) || "Untitled space";
+        const signIns = signInsOf(action.signIns);
         let space: Space;
         if (action.kind === "agent") {
-          space = this.createAgentSpace(name, action.color);
+          space = this.createAgentSpace(name, {
+            color: action.color,
+            isolated: signIns === "separate",
+          });
           space.owner = "human";
         } else {
           space = {
@@ -1048,6 +1142,7 @@ export class BrowserController {
             color: action.color,
             kind: "personal",
             owner: "human",
+            signIns,
             createdAt: Date.now(),
           };
           this.state.spaces.push(space);
@@ -1072,6 +1167,26 @@ export class BrowserController {
           throw new Error("Invalid space options.");
         this.getSpace(action.id).color = action.color;
         break;
+      case "space:sign-ins": {
+        const space = this.getSpace(action.id);
+        const signIns = signInsOf(action.signIns);
+        if (space.kind !== "personal")
+          throw new Error("Only personal spaces can change their sign-ins.");
+        if (space.signIns === signIns) break;
+        const previous = this.partitionFor(space);
+        space.signIns = signIns;
+        // Its pages reload in the new session.
+        for (const tab of this.state.tabs.filter(
+          (item) => item.spaceId === space.id,
+        )) {
+          this.destroyTab(tab.id);
+          tab.loading = false;
+        }
+        this.emit();
+        if (previous !== SHARED_PARTITION)
+          await this.discardPartition(previous);
+        break;
+      }
       case "space:ownership": {
         const space = this.getSpace(action.id);
         if (
@@ -1111,6 +1226,8 @@ export class BrowserController {
           (item) => item.spaceId !== space.id,
         );
         this.captures.delete(space.id);
+        for (const key of this.grants)
+          if (key.startsWith(`${space.id}|`)) this.grants.delete(key);
         this.state.activity = this.state.activity.filter(
           (item) => item.spaceId !== space.id,
         );
@@ -1120,16 +1237,10 @@ export class BrowserController {
               (tab) => tab.spaceId === this.state.spaces[0].id,
             )!,
           );
-        const oldSession = this.sessionFor(space);
+        const partition = this.partitionFor(space);
         this.emit();
-        try {
-          await oldSession.clearStorageData();
-          await oldSession.clearCache();
-        } finally {
-          this.sessionCleanups.get(space.id)?.();
-          this.sessionCleanups.delete(space.id);
-          this.sessions.delete(space.id);
-        }
+        if (partition !== SHARED_PARTITION)
+          await this.discardPartition(partition);
         break;
       }
       case "bookmark:add": {
@@ -1176,6 +1287,40 @@ export class BrowserController {
       case "history:clear":
         this.state.history = [];
         break;
+      case "import:apply": {
+        const now = Date.now();
+        const bookmarks: ImportedBookmark[] = importedPages(
+          action.bookmarks,
+          now,
+        );
+        for (const item of bookmarks) {
+          if (this.state.bookmarks.length >= 1000) break;
+          if (!this.state.bookmarks.some((entry) => entry.url === item.url))
+            this.state.bookmarks.push({
+              id: randomUUID(),
+              url: item.url,
+              title: item.title,
+              createdAt: now,
+            });
+        }
+        for (const item of importedPages(action.history, now)) {
+          const existing = this.state.history.find(
+            (entry) => entry.url === item.url,
+          );
+          if (!existing) {
+            this.state.history.push({ id: randomUUID(), ...item });
+            continue;
+          }
+          existing.visits = (existing.visits ?? 1) + item.visits;
+          if (item.visitedAt > existing.visitedAt) {
+            existing.visitedAt = item.visitedAt;
+            existing.title = item.title;
+          }
+        }
+        this.state.history.sort((a, b) => b.visitedAt - a.visitedAt);
+        this.state.history = this.state.history.slice(0, 1000);
+        break;
+      }
       case "settings:update":
         this.state.settings = validSettings(
           action.settings,

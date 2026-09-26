@@ -22,10 +22,57 @@ export const tabStripCopy = {
 export const settingsCopy = {
   agents: "Agents",
   access: "Agent access",
+  isolate: "Isolate agent spaces",
+  isolateNote:
+    "Give every new agent space a temporary session of its own instead of your sign-ins.",
   spaces:
-    "Agent spaces have separate cookies and disappear when you quit. Take over at any time.",
+    "Agent spaces use your sign-ins unless you isolate them, and disappear when you quit. Take over at any time.",
   activity: "Recent activity",
   noActivity: "Actions will appear here when an agent gets to work.",
+  import: "Import bookmarks and history",
+  importNote: "Bring them over from another browser on this computer.",
+  importButton: "Import...",
+} as const;
+
+export const signInsCopy = {
+  label: "Separate sign-ins",
+  personal: "Keep this space's cookies and sign-ins apart from your other spaces.",
+  agent: "Give the agent a temporary session without your sign-ins.",
+} as const;
+
+export const welcomeCopy = {
+  title: "Welcome to Kamapathy",
+  description:
+    "Bring your bookmarks and history from another browser on this computer.",
+  signInTitle: "Sign in once",
+  signInDescription:
+    "Kamapathy shares your sign-ins across your spaces and with your agents, so a site you sign in to here works everywhere. Any space can keep separate sign-ins, and Settings can isolate agent spaces.",
+  sites: "Your sites",
+  open: "Open",
+  opened: "Opened",
+  done: "Done",
+  noSites:
+    "Open the sites you use most and sign in. Your agents can then use them too.",
+} as const;
+
+export const importCopy = {
+  title: "Import bookmarks and history",
+  description:
+    "Choose a browser on this computer. Kamapathy reads its bookmarks and history and never changes them.",
+  from: "Import from",
+  defaultBrowser: "Default browser",
+  profile: "Profile",
+  bookmarks: "Bookmarks",
+  history: "History",
+  skip: "Skip",
+  import: "Import",
+  working: "Importing...",
+  continue: "Continue",
+  looking: "Looking for browsers...",
+  none: "No other browsers were found on this computer.",
+  failed: "The import did not finish. Try again.",
+  done: (bookmarks: number, history: number) =>
+    `Imported ${bookmarks} ${bookmarks === 1 ? "bookmark" : "bookmarks"} and ${history} ${history === 1 ? "site" : "sites"}.`,
 } as const;
 
 export const agentBarCopy = {

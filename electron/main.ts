@@ -6,7 +6,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { BrowserController } from "./controller";
 import { menuTemplate } from "./menu";
 import { readState } from "./persistence";
-import { migrateProfile } from "./profile";
 import { startAutomation } from "./automation";
 import {
   agentPaths,
@@ -34,8 +33,6 @@ const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 if (process.env.KAMAPATHY_USER_DATA)
   app.setPath("userData", resolve(process.env.KAMAPATHY_USER_DATA));
 app.setName("Kamapathy");
-if (!process.env.KAMAPATHY_USER_DATA)
-  migrateProfile(join(app.getPath("appData"), "Grove"), app.getPath("userData"));
 if (process.platform === "win32") app.setAppUserModelId("app.kamapathy.browser");
 if (process.platform === "linux") app.setDesktopName("app.kamapathy.browser.desktop");
 // Agents on this computer find Kamapathy through this profile's agent folder.

@@ -44,6 +44,7 @@ export function initialState(
         color: "green",
         kind: "personal",
         owner: "human",
+        signIns: "shared",
         createdAt: now,
       },
       {
@@ -52,6 +53,7 @@ export function initialState(
         color: "blue",
         kind: "personal",
         owner: "human",
+        signIns: "shared",
         createdAt: now,
       },
     ],
@@ -101,6 +103,8 @@ export function initialState(
       showBookmarksBar: false,
       // Local agents may connect unless the person turns this off.
       automationEnabled: true,
+      isolateAgentSpaces: false,
+      welcomed: false,
     },
     platform,
     version,

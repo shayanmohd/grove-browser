@@ -28,6 +28,7 @@ import type {
   BrowserAction,
   BrowserState,
   FrozenFrame,
+  SignIns,
   SpaceColor,
 } from "../shared/types";
 import { HOME_URL, initialState } from "../shared/state";
@@ -49,7 +50,8 @@ import { SpacePopover } from "./components/SpacePopover";
 import { ActivityDialog } from "./components/ActivityDialog";
 import { SpacesOverview } from "./components/SpacesOverview";
 import { FindPill } from "./components/FindPill";
-import { newTabCopy, spacesCopy } from "./copy";
+import { ImportPanel, Welcome } from "./components/Welcome";
+import { importCopy, newTabCopy, signInsCopy, spacesCopy } from "./copy";
 import { useAgentClock } from "./lib/useAgentClock";
 import { spaceTabs } from "./lib/tabs";
 import { type ActionName, isActionName } from "./lib/actions";
@@ -69,7 +71,9 @@ type Overlay =
   | "tab-search"
   | "space-popover"
   | "activity"
-  | "spaces-grid";
+  | "spaces-grid"
+  | "welcome"
+  | "import";
 export default function App() {
   const [state, setState] = useState<BrowserState>(() => initialState());
   const [ready, setReady] = useState(false);
@@ -83,6 +87,7 @@ export default function App() {
   const [spaceName, setSpaceName] = useState("");
   const [spaceKind, setSpaceKind] = useState<"personal" | "agent">("personal");
   const [spaceColor, setSpaceColor] = useState<SpaceColor>("green");
+  const [spaceSignIns, setSpaceSignIns] = useState<SignIns>("shared");
   const [bookmarkTitle, setBookmarkTitle] = useState("");
   const [bookmarkUrl, setBookmarkUrl] = useState("");
   const [editingBookmark, setEditingBookmark] = useState<string | null>(null);
@@ -255,6 +260,18 @@ export default function App() {
     },
     [show],
   );
+  // The welcome dialog opens once per profile, on the first launch.
+  const welcomed = useRef(false);
+  useEffect(() => {
+    if (!ready || !isDesktop || state.settings.welcomed || welcomed.current)
+      return;
+    welcomed.current = true;
+    void show("welcome");
+  }, [ready, state.settings.welcomed, show]);
+  const finishWelcome = useCallback(() => {
+    close();
+    void dispatch({ type: "settings:update", settings: { welcomed: true } });
+  }, [close, dispatch]);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   useEffect(() => {
     if (overlay !== "spaces-grid") return;
@@ -291,6 +308,7 @@ export default function App() {
     setSpaceName("");
     setSpaceKind(kind);
     setSpaceColor(kind === "agent" ? "purple" : "green");
+    setSpaceSignIns("shared");
     void show("space");
   }, [show]);
   const openBookmark = useCallback(() => {
@@ -624,7 +642,24 @@ export default function App() {
         state={state}
         dispatch={dispatch}
         focus={settingsFocus}
+        onImport={() => void show("import")}
       />
+      <Welcome
+        open={overlay === "welcome"}
+        state={state}
+        onOpenSite={(url) =>
+          void dispatch({ type: "tab:create", url, background: true })
+        }
+        onClose={finishWelcome}
+      />
+      <Modal
+        open={overlay === "import"}
+        onClose={close}
+        title={importCopy.title}
+        description={importCopy.description}
+      >
+        {overlay === "import" && <ImportPanel onDone={close} />}
+      </Modal>
       <LibraryDialog
         kind={
           overlay === "bookmarks" ||
@@ -652,8 +687,8 @@ export default function App() {
         }
         description={
           spaceKind === "agent"
-            ? "A separate, temporary session. You decide when an agent can access it."
-            : "Group your tabs and keep cookies separate for each part of your day."
+            ? "A space an agent works in. You decide when it can access it."
+            : "Group your tabs for each part of your day."
         }
       >
         <form
@@ -669,6 +704,7 @@ export default function App() {
                 name: spaceName,
                 color: spaceColor,
                 kind: spaceKind,
+                signIns: spaceSignIns,
               })
             ) {
               close();
@@ -718,6 +754,28 @@ export default function App() {
                 {spaceColor === color && <Check size={17} />}
               </button>
             ))}
+          </div>
+          <div className="form-switch">
+            <div>
+              <strong>{signInsCopy.label}</strong>
+              <p>
+                {spaceKind === "agent" ? signInsCopy.agent : signInsCopy.personal}
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-label={signInsCopy.label}
+              aria-checked={spaceSignIns === "separate"}
+              className={`toggle ${spaceSignIns === "separate" ? "on" : ""}`}
+              onClick={() =>
+                setSpaceSignIns(
+                  spaceSignIns === "separate" ? "shared" : "separate",
+                )
+              }
+            >
+              <span />
+            </button>
           </div>
           {formError && (
             <p className="form-error" role="alert">

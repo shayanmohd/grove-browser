@@ -12,7 +12,8 @@
   color: var(--text);
   -webkit-app-region: no-drag;
 }
-.popover [role="menuitem"] {
+.popover [role="menuitem"],
+.popover [role="menuitemcheckbox"] {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -23,12 +24,19 @@
   text-align: left;
 }
 .popover [role="menuitem"]:not(:disabled):hover,
-.popover [role="menuitem"]:focus-visible {
+.popover [role="menuitem"]:focus-visible,
+.popover [role="menuitemcheckbox"]:not(:disabled):hover,
+.popover [role="menuitemcheckbox"]:focus-visible {
   background: var(--hover);
   outline: none;
 }
-.popover [role="menuitem"] > svg {
+.popover [role="menuitem"] > svg,
+.popover [role="menuitemcheckbox"] > svg {
   color: var(--secondary);
+}
+.popover [role="menuitemcheckbox"] > svg:last-child {
+  margin-left: auto;
+  color: var(--text);
 }
 .popover kbd {
   margin-left: auto;

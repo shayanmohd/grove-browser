@@ -29,6 +29,9 @@ const bridge: KamapathyBridge = {
   unfreeze: () => ipcRenderer.invoke("kamapathy:unfreeze"),
   thumbnails: () => ipcRenderer.invoke("kamapathy:thumbnails"),
   windowControl: (action) => ipcRenderer.send("kamapathy:window", action),
+  importSources: () => ipcRenderer.invoke("kamapathy:import-sources"),
+  importBrowserData: (request) =>
+    ipcRenderer.invoke("kamapathy:import", request),
 };
 
 contextBridge.exposeInMainWorld("kamapathy", bridge);

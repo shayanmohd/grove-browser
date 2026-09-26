@@ -38,18 +38,46 @@ describe("desktop session persistence", () => {
     });
     expect(initialState().settings.showBookmarksBar).toBe(false);
   });
-  it("keeps new tabs from a save made before the rename", () => {
+  it("shares sign-ins by default and keeps a space's separate sign-ins", () => {
     const path = statePath();
     const original = initialState();
-    original.tabs[0].url = "grove://newtab";
-    original.tabs[0].pinned = true;
+    original.spaces[1].signIns = "separate";
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...original,
+        spaces: [
+          { ...original.spaces[0], signIns: undefined },
+          original.spaces[1],
+          { ...original.spaces[1], id: "odd", name: "Odd", signIns: "private" },
+        ],
+      }),
+    );
+    const restored = readState(path, "darwin", "0.2.0");
+    expect(restored.spaces.map((space) => space.signIns)).toEqual([
+      "shared",
+      "separate",
+      "shared",
+    ]);
+    expect(restored.settings.isolateAgentSpaces).toBe(false);
+    expect(restored.settings.welcomed).toBe(false);
+  });
+  it("keeps visit counts from imported history and drops invalid ones", () => {
+    const path = statePath();
+    const original = initialState();
+    original.history.push(
+      { id: "a", title: "A", url: "https://a.example/", visitedAt: 5, visits: 3 },
+      { id: "b", title: "B", url: "https://b.example/", visitedAt: 4, visits: 0 },
+      { id: "c", title: "C", url: "https://c.example/", visitedAt: 3 },
+    );
     writeFileSync(path, JSON.stringify(original));
     const restored = readState(path, "darwin", "0.2.0");
-    expect(restored.tabs[0]).toMatchObject({
-      id: original.tabs[0].id,
-      url: HOME_URL,
-      pinned: true,
-    });
+    expect(restored.history.map((entry) => entry.visits)).toEqual([
+      3,
+      undefined,
+      undefined,
+    ]);
+    expect(restored.history[1]).not.toHaveProperty("visits");
   });
   it("rejects duplicate space and tab identifiers across restored spaces", () => {
     const path = statePath();
@@ -130,6 +158,7 @@ describe("desktop session persistence", () => {
       name: "Private task",
       kind: "agent",
       owner: "agent",
+      signIns: "shared",
       color: "purple",
       createdAt: Date.now(),
     });

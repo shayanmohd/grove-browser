@@ -26,6 +26,12 @@ export function validSettings(value: unknown, base: Settings): Settings {
       typeof settings.automationEnabled === "boolean"
         ? settings.automationEnabled
         : base.automationEnabled,
+    isolateAgentSpaces:
+      typeof settings.isolateAgentSpaces === "boolean"
+        ? settings.isolateAgentSpaces
+        : base.isolateAgentSpaces,
+    welcomed:
+      typeof settings.welcomed === "boolean" ? settings.welcomed : base.welcomed,
   };
 }
 
@@ -59,17 +65,20 @@ export function restoreState(
             spaceIds.add(space.id);
             return true;
           })
-          .map((space) => ({ ...space, owner: "human" as const }))
+          .map((space) => ({
+            ...space,
+            owner: "human" as const,
+            signIns:
+              space.signIns === "separate"
+                ? ("separate" as const)
+                : ("shared" as const),
+          }))
       : [];
     if (spaces.length) state.spaces = spaces.slice(0, 30);
     state.tabs = state.spaces.map((space) => newTab(space.id));
     if (state.settings.restoreSession && Array.isArray(saved.tabs)) {
       const tabIds = new Set<string>();
       const restored = saved.tabs
-        // New tabs saved before the rename used the old address.
-        .map((tab) =>
-          tab?.url === "grove://newtab" ? { ...tab, url: HOME_URL } : tab,
-        )
         .filter(
           (tab) =>
             tab &&
@@ -144,6 +153,9 @@ export function restoreState(
             typeof item.title === "string" &&
             Number.isFinite(item.visitedAt) &&
             isWebUrl(item.url),
+        )
+        .map(({ visits, ...item }) =>
+          Number.isInteger(visits) && visits! > 0 ? { ...item, visits } : item,
         )
         .slice(0, 1000);
   } catch {

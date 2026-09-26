@@ -95,17 +95,21 @@ class FakeController implements AutomationController {
       color: "purple",
       kind: "agent",
       owner: "agent",
+      signIns: "separate",
       createdAt: Date.now(),
     });
     this.state.tabs.push(newTab("manual-agent", "https://private.example/"));
   }
-  createAgentSpace(name: string): Space {
+  isolatedRequests: boolean[] = [];
+  createAgentSpace(name: string, options?: { isolated?: boolean }): Space {
+    this.isolatedRequests.push(!!options?.isolated);
     const space: Space = {
       id: crypto.randomUUID(),
       name,
       color: "purple",
       kind: "agent",
       owner: "agent",
+      signIns: options?.isolated ? "separate" : "shared",
       createdAt: Date.now(),
     };
     this.state.spaces.push(space);
@@ -306,6 +310,24 @@ describe("local automation socket", () => {
     socket.cleanup();
   });
 
+  it("creates agent spaces with the person's sign-ins unless isolation is requested", async () => {
+    const shared = await request("/spaces", "POST", { name: "Research" });
+    expect(shared.status).toBe(201);
+    expect((await shared.json()).space.signIns).toBe("shared");
+    const isolated = await request("/spaces", "POST", {
+      name: "Clean",
+      isolated: true,
+    });
+    expect(isolated.status).toBe(201);
+    expect((await isolated.json()).space.signIns).toBe("separate");
+    expect(controller.isolatedRequests).toEqual([false, true]);
+    expect(controller.activity.at(-1)?.message).toBe(
+      "Agent connected to a new space",
+    );
+    const odd = await request("/spaces", "POST", { name: "Odd", isolated: "yes" });
+    expect(odd.status).toBe(400);
+    expect((await odd.json()).error.code).toBe("invalid_field");
+  });
   it("listens only on a private local socket and needs no token", async () => {
     expect(api.endpoint).toBe(socket.path);
     if (process.platform !== "win32") {

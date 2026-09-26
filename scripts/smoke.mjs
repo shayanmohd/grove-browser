@@ -96,6 +96,21 @@ try {
   let state = await page.evaluate(() => window.kamapathy.getState());
   assert.equal(state.platform, process.platform);
   checked("desktop bridge and platform detection");
+  // The dialog's name follows its step, so it is found by class.
+  const welcome = page.locator(".welcome-modal");
+  await welcome.getByRole("heading", { name: "Welcome to Kamapathy" }).waitFor();
+  assert.equal(state.settings.welcomed, false);
+  // A machine without another browser offers Continue instead of Skip.
+  await welcome.getByRole("button", { name: /^(Skip|Continue)$/ }).click();
+  await welcome.getByRole("heading", { name: "Sign in once" }).waitFor();
+  assert.ok(
+    (await welcome.getByRole("button", { name: /^Open / }).count()) >= 1,
+    "top sites come from the default bookmarks on a fresh profile",
+  );
+  await welcome.getByRole("button", { name: "Done" }).click();
+  await welcome.waitFor({ state: "detached" });
+  await waitForState(page, (state) => state.settings.welcomed);
+  checked("the welcome dialog offers an import and top sites to sign in to, once");
   assert.equal(await page.getByRole("complementary").count(), 0);
   if (process.platform === "darwin") {
     assert.deepEqual(
@@ -113,6 +128,7 @@ try {
   await spacesButton.click();
   await spacesMenu.getByRole("menuitem", { name: "New space" }).click();
   await page.getByLabel("Space name", { exact: true }).fill("Test project");
+  await page.getByRole("switch", { name: "Separate sign-ins" }).click();
   await page.getByRole("button", { name: "Create space", exact: true }).click();
   await poll(
     async () =>
@@ -121,7 +137,11 @@ try {
   );
   state = await page.evaluate(() => window.kamapathy.getState());
   const project = state.activeSpaceId;
-  checked("workspace creation through the interface");
+  assert.equal(
+    state.spaces.find((space) => space.id === project).signIns,
+    "separate",
+  );
+  checked("workspace creation through the interface, with separate sign-ins");
   await spacesButton.focus();
   await page.keyboard.press("Enter");
   await spacesMenu.waitFor();
@@ -1033,7 +1053,102 @@ try {
     await webPage.evaluate(() => document.cookie.includes("kamapathy_cookie")),
     false,
   );
-  checked("cookies and local storage are isolated across personal spaces");
+  checked("cookies and local storage stay inside a space with separate sign-ins");
+  await webPage.evaluate(() => {
+    document.cookie = "kamapathy_shared=yes; path=/; max-age=3600";
+  });
+  state = await page.evaluate(() =>
+    window.kamapathy.dispatch({
+      type: "space:create",
+      name: "Shared",
+      color: "green",
+      kind: "personal",
+    }),
+  );
+  const sharedSpace = state.activeSpaceId;
+  assert.equal(
+    state.spaces.find((space) => space.id === sharedSpace).signIns,
+    "shared",
+  );
+  const openSharedPage = async () => {
+    await waitForState(page, (state) =>
+      state.tabs.some(
+        (tab) => tab.spaceId === sharedSpace && tab.title === "Kamapathy test garden" && !tab.loading,
+      ),
+    );
+    return app
+      .context()
+      .pages()
+      .filter((candidate) => candidate.url() === `${origin}/`)
+      .at(-1);
+  };
+  await page.evaluate(
+    (url) => window.kamapathy.dispatch({ type: "tab:create", url }),
+    origin,
+  );
+  let sharedPage = await openSharedPage();
+  assert.equal(
+    await sharedPage.evaluate(() => document.cookie.includes("kamapathy_shared")),
+    true,
+  );
+  assert.equal(
+    await sharedPage.evaluate(() => document.cookie.includes("kamapathy_cookie")),
+    false,
+  );
+  checked("a new space shares sign-ins with the personal space by default");
+  await spacesButton.click();
+  await spacesMenu.getByRole("menuitem", { name: "Options for Shared" }).click();
+  const separateItem = spacesMenu.getByRole("menuitemcheckbox", {
+    name: "Separate sign-ins",
+  });
+  assert.equal(await separateItem.getAttribute("aria-checked"), "false");
+  await separateItem.click();
+  await waitForState(
+    page,
+    (state, id) => state.spaces.find((space) => space.id === id).signIns === "separate",
+    sharedSpace,
+  );
+  await page.keyboard.press("Escape");
+  await spacesMenu.waitFor({ state: "detached" });
+  sharedPage = await openSharedPage();
+  assert.equal(
+    await sharedPage.evaluate(() => document.cookie.includes("kamapathy_shared")),
+    false,
+  );
+  await page.evaluate(
+    (id) =>
+      window.kamapathy.dispatch({ type: "space:sign-ins", id, signIns: "shared" }),
+    sharedSpace,
+  );
+  sharedPage = await openSharedPage();
+  assert.equal(
+    await sharedPage.evaluate(() => document.cookie.includes("kamapathy_shared")),
+    true,
+  );
+  await page.evaluate(
+    (id) => window.kamapathy.dispatch({ type: "space:delete", id }),
+    sharedSpace,
+  );
+  assert.ok(
+    (
+      await app.evaluate(
+        async ({ session }, origin) =>
+          (
+            await session
+              .fromPartition("persist:space-personal")
+              .cookies.get({ url: origin, name: "kamapathy_shared" })
+          ).length,
+        origin,
+      )
+    ) > 0,
+    "deleting a shared space keeps the shared sign-ins",
+  );
+  checked("a space can separate its sign-ins from the popover and share them again");
+  await page.evaluate(
+    (id) => window.kamapathy.dispatch({ type: "tab:activate", id }),
+    personalTab,
+  );
+  await livePages(page, 1);
   await page.getByRole("button", { name: "Browser menu", exact: true }).focus();
   await withFrozenFrame(
     page,
@@ -1440,6 +1555,67 @@ try {
     0,
   );
   checked("deleting an unopened restored space clears its persistent cookies");
+  assert.equal(
+    await page.getByRole("dialog", { name: "Welcome to Kamapathy" }).count(),
+    0,
+  );
+  await page.getByRole("button", { name: "Browser menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  await page.getByRole("button", { name: "Import...", exact: true }).click();
+  await page.getByRole("heading", { name: "Import bookmarks and history" }).waitFor();
+  await page.getByRole("button", { name: /^(Skip|Continue|Import)$/ }).first().waitFor();
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.getByRole("button", { name: "Browser menu", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Settings" }).click();
+  const isolateSwitch = page.getByRole("switch", { name: "Isolate agent spaces" });
+  assert.equal(await isolateSwitch.getAttribute("aria-checked"), "false");
+  await isolateSwitch.click();
+  await waitForState(page, (state) => state.settings.isolateAgentSpaces);
+  await page.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await page.evaluate(() =>
+    window.kamapathy.dispatch({
+      type: "settings:update",
+      settings: { automationEnabled: true },
+    }),
+  );
+  await waitForState(page, (state) => state.automation.running);
+  // Access was off before the restart, so this is a new socket.
+  const restarted = socketFetch(await resolveSocket(agentEnv));
+  const restartedApi = async (path, method = "GET", body) =>
+    restarted(path, {
+      method,
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  const isolatedSpace = (
+    await (await restartedApi("/spaces", "POST", { name: "Isolated task" })).json()
+  ).space;
+  assert.equal(isolatedSpace.signIns, "separate");
+  const sharedAgentSpace = (
+    await (
+      await restartedApi("/spaces", "POST", { name: "Shared task", isolated: false })
+    ).json()
+  ).space;
+  assert.equal(sharedAgentSpace.signIns, "separate", "the setting wins over the request");
+  await page.evaluate(() =>
+    window.kamapathy.dispatch({
+      type: "settings:update",
+      settings: { isolateAgentSpaces: false },
+    }),
+  );
+  const requestedIsolation = (
+    await (
+      await restartedApi("/spaces", "POST", { name: "Clean task", isolated: true })
+    ).json()
+  ).space;
+  assert.equal(requestedIsolation.signIns, "separate");
+  const defaultAgentSpace = (
+    await (await restartedApi("/spaces", "POST", { name: "Usual task" })).json()
+  ).space;
+  assert.equal(defaultAgentSpace.signIns, "shared");
+  for (const id of [isolatedSpace.id, sharedAgentSpace.id, requestedIsolation.id, defaultAgentSpace.id])
+    assert.equal((await restartedApi(`/spaces/${id}`, "DELETE")).status, 200);
+  checked("Settings can isolate every new agent space, and an agent can ask for one isolated space");
   if (process.platform === "darwin") {
     await page.evaluate(
       (url) => window.kamapathy.dispatch({ type: "tab:create", url }),

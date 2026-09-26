@@ -146,6 +146,7 @@ export async function captureSurfaces({
   outDir,
   surfaces,
   frameRadius = 10,
+  welcome = false,
 }) {
   const profile = await mkdtemp(join(tmpdir(), "kamapathy-screens-"));
   const fixture = await startFixture();
@@ -169,6 +170,39 @@ export async function captureSurfaces({
       BrowserWindow.getAllWindows()[0].setContentSize(1280, 800),
     );
     await waitForState(shell, (state) => state.automation.running);
+    const setTheme = async (theme) => {
+      await shell.evaluate(
+        (theme) => window.kamapathy.dispatch({ type: "settings:update", settings: { theme } }),
+        theme,
+      );
+      await shell.waitForFunction(
+        (theme) => document.documentElement.dataset.theme === theme,
+        theme,
+      );
+    };
+    // The welcome dialog opens once per profile, before anything else.
+    const welcomeDialog = shell.locator(".welcome-modal");
+    const next = welcomeDialog.getByRole("button", { name: /^(Skip|Continue)$/ });
+    await next.waitFor();
+    if (welcome) {
+      await mkdir(outDir, { recursive: true });
+      for (const theme of ["light", "dark"]) {
+        await setTheme(theme);
+        await shell.waitForTimeout(300);
+        await shoot(app, shell, join(outDir, `welcome-${theme}.png`), frameRadius);
+      }
+    }
+    await next.click();
+    await welcomeDialog.getByRole("heading", { name: "Sign in once" }).waitFor();
+    if (welcome)
+      for (const theme of ["light", "dark"]) {
+        await setTheme(theme);
+        await shell.waitForTimeout(300);
+        await shoot(app, shell, join(outDir, `welcome-sites-${theme}.png`), frameRadius);
+      }
+    await welcomeDialog.getByRole("button", { name: "Done" }).click();
+    await welcomeDialog.waitFor({ state: "detached" });
+    await setTheme("light");
     // Serves Google's rejected sign-in page locally, so its notice shows offline.
     await app.evaluate(({ session }) =>
       session
@@ -202,11 +236,7 @@ export async function captureSurfaces({
     // surfaces that turn agent access off can come last.
     for (const [name, surface] of Object.entries(surfaces))
       for (const theme of ["light", "dark"]) {
-        await dispatch({ type: "settings:update", settings: { theme } });
-        await shell.waitForFunction(
-          (theme) => document.documentElement.dataset.theme === theme,
-          theme,
-        );
+        await setTheme(theme);
         await surface.open(context);
         await shell.waitForTimeout(400);
         await shoot(app, shell, join(outDir, `${name}-${theme}.png`), frameRadius);
@@ -369,6 +399,27 @@ export const afterSurfaces = {
     close: closeDialog,
   },
   "new-space": { open: ({ shell }) => fromMenu(shell, "New space"), close: closeDialog },
+  "space-options": {
+    open: async ({ shell }) => {
+      await shell.getByRole("button", { name: /^Spaces: / }).click();
+      await shell.getByRole("menuitem", { name: "Options for Work" }).click();
+      await shell
+        .getByRole("menuitemcheckbox", { name: "Separate sign-ins" })
+        .waitFor();
+    },
+    close: escape,
+  },
+  import: {
+    open: async ({ shell }) => {
+      await fromMenu(shell, "Settings");
+      await shell.getByRole("button", { name: "Import...", exact: true }).click();
+      await shell
+        .getByRole("button", { name: /^(Skip|Continue|Import)$/ })
+        .first()
+        .waitFor();
+    },
+    close: closeDialog,
+  },
   "tab-menu": {
     open: ({ shell }) =>
       shell
@@ -481,9 +532,15 @@ if (
 ) {
   const root = resolve("artifacts/screens");
   if (!process.argv.includes("--index")) {
-    await captureSurfaces({ outDir: join(root, "after"), surfaces: afterSurfaces });
+    await captureSurfaces({
+      outDir: join(root, "after"),
+      surfaces: afterSurfaces,
+      welcome: true,
+    });
     await mkdir("docs/images", { recursive: true });
     for (const [from, to] of [
+      ["welcome-light", "kamapathy-welcome-light"],
+      ["welcome-dark", "kamapathy-welcome-dark"],
       ["web-page-light", "kamapathy-light"],
       ["web-page-dark", "kamapathy-dark"],
       ["agent-browsing-light", "kamapathy-agents-light"],

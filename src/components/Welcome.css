@@ -1,0 +1,122 @@
+.welcome-modal {
+  max-width: 520px;
+}
+.import-sources {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+}
+.import-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 13px;
+  cursor: pointer;
+}
+.import-source.selected {
+  outline: 2px solid var(--text);
+}
+.import-source input,
+.import-choices input {
+  margin: 0;
+  accent-color: var(--text);
+}
+.import-source-name {
+  font-weight: 500;
+}
+.import-source-tag {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.import-choices {
+  display: flex;
+  gap: 20px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.import-choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.import-status {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.import-result > p:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.import-result > p:first-child > svg {
+  color: var(--text);
+}
+.top-sites {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+.top-site {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 8px 10px;
+  border-radius: 12px;
+  background: var(--raised);
+}
+.top-site:hover {
+  background: var(--hover);
+}
+.top-site.opened {
+  outline: 2px solid var(--text);
+}
+.top-site-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--surface);
+}
+.top-site-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
+}
+.top-site-action {
+  font-size: 11px;
+  color: var(--secondary);
+}
+.top-site.opened .top-site-action {
+  color: var(--text);
+}
+.form-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+}
+.form-switch strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.form-switch p {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--secondary);
+}

@@ -17,7 +17,7 @@ import {
 export interface AutomationController {
   readonly state: BrowserState;
   dispatch(action: BrowserAction): Promise<BrowserState>;
-  createAgentSpace(name: string): Space;
+  createAgentSpace(name: string, options?: { isolated?: boolean }): Space;
   getWebContents(tabId: string): WebContents | undefined;
   canCapturePage(): boolean;
   addActivity(
@@ -1079,11 +1079,14 @@ export async function startAutomation(
           "space_limit",
           "Close an agent space before creating another. The limit is 12.",
         );
-      const space = controller.createAgentSpace(name);
+      const isolated = body!.isolated === undefined ? false : body!.isolated;
+      if (typeof isolated !== "boolean")
+        return fail(400, "invalid_field", "isolated must be true or false.");
+      const space = controller.createAgentSpace(name, { isolated });
       managedSpaces.add(space.id);
       controller.addActivity(
         space.id,
-        "Agent connected to an isolated space",
+        "Agent connected to a new space",
         "success",
       );
       return send(response, 201, { space });
