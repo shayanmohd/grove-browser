@@ -1,0 +1,22 @@
+{
+   "profile": {
+      "info_cache": {
+         "Default": {
+            "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_26",
+            "name": "Person 1",
+            "user_name": ""
+         },
+         "Profile 1": {
+            "avatar_icon": "chrome://theme/IDR_PROFILE_AVATAR_3",
+            "name": "Work",
+            "user_name": "work@example.com"
+         },
+         "Profile 2": {
+            "name": "Removed"
+         }
+      },
+      "last_active_profiles": [ "Profile 1" ],
+      "last_used": "Profile 1",
+      "profiles_order": [ "Default", "Profile 1", "Profile 2" ]
+   }
+}

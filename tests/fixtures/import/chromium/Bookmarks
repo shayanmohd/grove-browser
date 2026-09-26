@@ -1,0 +1,72 @@
+{
+   "checksum": "5b4c9c8e3f0d3f2a6f8f0c1f2a3b4c5d",
+   "roots": {
+      "bookmark_bar": {
+         "children": [ {
+            "date_added": "13380000000000000",
+            "guid": "0b1e2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+            "id": "5",
+            "name": "Kamapathy",
+            "type": "url",
+            "url": "https://kamapathy.app/"
+         }, {
+            "children": [ {
+               "name": "Docs",
+               "type": "url",
+               "url": "https://kamapathy.app/docs/"
+            }, {
+               "children": [ {
+                  "name": "Nested",
+                  "type": "url",
+                  "url": "https://example.com/nested"
+               } ],
+               "name": "Deeper",
+               "type": "folder"
+            } ],
+            "name": "Work",
+            "type": "folder"
+         }, {
+            "name": "Settings",
+            "type": "url",
+            "url": "chrome://settings/"
+         }, {
+            "name": "Bookmarklet",
+            "type": "url",
+            "url": "javascript:alert(1)"
+         }, {
+            "name": "",
+            "type": "url",
+            "url": "https://example.com/untitled"
+         }, {
+            "name": "  Padded  ",
+            "type": "url",
+            "url": "https://example.com/padded"
+         } ],
+         "name": "Bookmarks bar",
+         "type": "folder"
+      },
+      "other": {
+         "children": [ {
+            "name": "Other page",
+            "type": "url",
+            "url": "https://example.com/other"
+         }, {
+            "name": "Duplicate",
+            "type": "url",
+            "url": "https://kamapathy.app/"
+         } ],
+         "name": "Other bookmarks",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [ {
+            "name": "Phone",
+            "type": "url",
+            "url": "https://example.com/phone"
+         } ],
+         "name": "Mobile bookmarks",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}
