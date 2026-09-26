@@ -129,6 +129,9 @@ export default function App() {
   const bookmarked = state.bookmarks.find(
     (bookmark) => bookmark.url === active?.url,
   );
+  // Settings decides for every new agent space, so the dialog says so.
+  const forcedIsolation =
+    spaceKind === "agent" && state.settings.isolateAgentSpaces;
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -759,15 +762,20 @@ export default function App() {
             <div>
               <strong>{signInsCopy.label}</strong>
               <p>
-                {spaceKind === "agent" ? signInsCopy.agent : signInsCopy.personal}
+                {forcedIsolation
+                  ? signInsCopy.forced
+                  : spaceKind === "agent"
+                    ? signInsCopy.agent
+                    : signInsCopy.personal}
               </p>
             </div>
             <button
               type="button"
               role="switch"
               aria-label={signInsCopy.label}
-              aria-checked={spaceSignIns === "separate"}
-              className={`toggle ${spaceSignIns === "separate" ? "on" : ""}`}
+              aria-checked={forcedIsolation || spaceSignIns === "separate"}
+              disabled={forcedIsolation}
+              className={`toggle ${forcedIsolation || spaceSignIns === "separate" ? "on" : ""}`}
               onClick={() =>
                 setSpaceSignIns(
                   spaceSignIns === "separate" ? "shared" : "separate",

@@ -38,6 +38,7 @@ export const signInsCopy = {
   label: "Separate sign-ins",
   personal: "Keep this space's cookies and sign-ins apart from your other spaces.",
   agent: "Give the agent a temporary session without your sign-ins.",
+  forced: "Settings isolates every new agent space.",
 } as const;
 
 export const welcomeCopy = {
