@@ -1,0 +1,53 @@
+.popover {
+  position: fixed;
+  z-index: 30;
+  min-width: 240px;
+  max-width: min(360px, calc(100vw - 16px));
+  max-height: calc(100dvh - 100px);
+  overflow: auto;
+  padding: 6px;
+  background: var(--raised);
+  border-radius: 12px;
+  box-shadow: var(--popover-shadow);
+  color: var(--text);
+  -webkit-app-region: no-drag;
+}
+.popover [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  text-align: left;
+}
+.popover [role="menuitem"]:not(:disabled):hover,
+.popover [role="menuitem"]:focus-visible {
+  background: var(--hover);
+  outline: none;
+}
+.popover [role="menuitem"] > svg {
+  color: var(--secondary);
+}
+.popover kbd {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--secondary);
+  font-size: 12px;
+}
+.popover hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  margin: 6px 4px;
+}
+.popover-heading {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.popover-empty {
+  padding: 8px 10px;
+  color: var(--secondary);
+}

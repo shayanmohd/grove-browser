@@ -1,0 +1,853 @@
+import { EventEmitter } from "node:events";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BrowserWindow } from "electron";
+import { dialog, session, shell, WebContentsView } from "electron";
+import { BrowserController } from "../electron/controller";
+import { HOME_URL, initialState, newTab } from "../shared/state";
+
+vi.mock("electron", () => ({
+  BrowserWindow: vi.fn(),
+  WebContentsView: vi.fn(function () {
+    return new FakeView();
+  }),
+  nativeTheme: { themeSource: "system" },
+  session: {
+    fromPartition: vi.fn((partition: string) => {
+      if (!sessions.has(partition)) sessions.set(partition, new FakeSession());
+      return sessions.get(partition)!;
+    }),
+  },
+  dialog: { showMessageBox: vi.fn(), showSaveDialog: vi.fn() },
+  shell: { showItemInFolder: vi.fn(), openExternal: vi.fn(async () => {}) },
+}));
+vi.mock("../electron/persistence", async (original) => ({
+  ...(await original<typeof import("../electron/persistence")>()),
+  writeState: vi.fn(),
+}));
+
+class FakeSession extends EventEmitter {
+  setPermissionCheckHandler = vi.fn();
+  setPermissionRequestHandler = vi.fn();
+  clearStorageData = vi.fn(async () => {});
+  clearCache = vi.fn(async () => {});
+}
+interface FakeImage {
+  isEmpty(): boolean;
+  getSize(): { width: number; height: number };
+  resize(options: { width: number }): FakeImage;
+  toJPEG(quality: number): Buffer;
+}
+function fakeImage(width = 1000): FakeImage {
+  return {
+    isEmpty: () => false,
+    getSize: () => ({ width, height: 700 }),
+    resize: ({ width: next }) => fakeImage(next),
+    toJPEG: () => Buffer.from(`jpeg-${width}`),
+  };
+}
+const jpegOf = (width: number) =>
+  `data:image/jpeg;base64,${Buffer.from(`jpeg-${width}`).toString("base64")}`;
+class FakeContents extends EventEmitter {
+  url = "";
+  destroyed = false;
+  zoom = 0;
+  pending: { url: string; reject: (reason: Error) => void }[] = [];
+  navigationHistory = { canGoBack: () => false, canGoForward: () => false };
+  setWindowOpenHandler = vi.fn();
+  setBackgroundThrottling = vi.fn();
+  send = vi.fn();
+  capturePage = vi.fn(
+    async (_rect?: unknown, _options?: { stayHidden?: boolean }): Promise<FakeImage> =>
+      fakeImage(),
+  );
+  focus = () => this.emit("focus");
+  isDestroyed = () => this.destroyed;
+  getURL = () => this.url;
+  getZoomLevel = () => this.zoom;
+  setZoomLevel = (value: number) => {
+    this.zoom = value;
+  };
+  reload = vi.fn();
+  loadURL = vi.fn(
+    (url: string) =>
+      new Promise<void>((_resolve, reject) => {
+        this.pending.push({ url, reject });
+      }),
+  );
+  close() {
+    // Chromium can finish stopping a navigation while a view is being closed.
+    this.emit("did-stop-loading");
+    this.destroyed = true;
+  }
+  commit(url: string) {
+    this.url = url;
+    this.emit("did-navigate", {}, url);
+    this.emit("did-stop-loading");
+  }
+}
+class FakeView {
+  webContents = new FakeContents();
+  visible = false;
+  bounds = { x: 0, y: 0, width: 0, height: 0 };
+  setVisible(value: boolean) {
+    this.visible = value;
+  }
+  setBounds(value: typeof this.bounds) {
+    this.bounds = value;
+  }
+  setBorderRadius = vi.fn();
+  getVisible() {
+    return this.visible;
+  }
+  getBounds() {
+    return this.bounds;
+  }
+}
+const sessions = new Map<string, FakeSession>();
+const controllers: BrowserController[] = [];
+function controller() {
+  const window = new EventEmitter() as EventEmitter & {
+    webContents: FakeContents;
+    contentView: {
+      addChildView: ReturnType<typeof vi.fn>;
+      removeChildView: ReturnType<typeof vi.fn>;
+    };
+    isDestroyed: () => boolean;
+    getContentSize: () => number[];
+    isVisible: () => boolean;
+    isMinimized: () => boolean;
+  };
+  window.webContents = new FakeContents();
+  window.contentView = { addChildView: vi.fn(), removeChildView: vi.fn() };
+  window.isDestroyed = () => false;
+  window.getContentSize = () => [1400, 900];
+  window.isVisible = () => true;
+  window.isMinimized = () => false;
+  const result = new BrowserController(
+    window as unknown as BrowserWindow,
+    initialState(),
+    "unused-test-state.json",
+  );
+  result.setContentBounds({
+    x: 200,
+    y: 80,
+    width: 1000,
+    height: 700,
+    hidden: false,
+  });
+  controllers.push(result);
+  return result;
+}
+function contents(browser: BrowserController, tabId: string) {
+  return browser.getWebContents(tabId) as unknown as FakeContents;
+}
+function viewFor(contents: FakeContents) {
+  return vi
+    .mocked(WebContentsView)
+    .mock.results.map((result) => result.value as FakeView)
+    .find((view) => view.webContents === contents)!;
+}
+beforeEach(() => {
+  sessions.clear();
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  for (const browser of controllers.splice(0)) browser.dispose();
+});
+
+describe("native browser lifecycle", () => {
+  it("edits a shortcut in place and refuses an address another shortcut has", async () => {
+    const browser = controller();
+    await browser.dispatch({
+      type: "bookmark:update",
+      id: "github",
+      title: "Code",
+      url: "github.com/shayanmohd",
+    });
+    expect(browser.state.bookmarks[0]).toMatchObject({
+      id: "github",
+      title: "Code",
+      url: "https://github.com/shayanmohd",
+    });
+    await expect(
+      browser.dispatch({
+        type: "bookmark:update",
+        id: "figma",
+        title: "Figma",
+        url: "https://github.com/shayanmohd",
+      }),
+    ).rejects.toThrow("already bookmarked");
+    await expect(
+      browser.dispatch({
+        type: "bookmark:update",
+        id: "missing",
+        title: "Gone",
+        url: "https://example.com/",
+      }),
+    ).rejects.toThrow("no longer exists");
+  });
+  it("recolours a space and rejects unknown colours", async () => {
+    const browser = controller();
+    await browser.dispatch({ type: "space:color", id: "work", color: "orange" });
+    expect(browser.state.spaces.find((space) => space.id === "work")?.color).toBe("orange");
+    await expect(
+      browser.dispatch({
+        type: "space:color",
+        id: "work",
+        color: "pink" as "green",
+      }),
+    ).rejects.toThrow("Invalid space options.");
+  });
+  it("opens only the active rejected Google page through a fixed external destination", async () => {
+    const browser = controller();
+    const tab = browser.state.tabs.find((item) => item.id === browser.state.activeTabId)!;
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    tab.url = "https://accounts.google.com/v3/signin/rejected?continue=" + encodeURIComponent("https://play.google.com/console/private?state=secret");
+    await browser.dispatch({ type: "tab:open-external", id: "missing" });
+    expect(shell.openExternal).not.toHaveBeenCalled();
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).toHaveBeenCalledExactlyOnceWith("https://play.google.com/console/");
+    browser.state.activeTabId = browser.state.tabs.find((item) => item.id !== tab.id)!.id;
+    await browser.dispatch({ type: "tab:open-external", id: tab.id });
+    expect(shell.openExternal).toHaveBeenCalledTimes(1);
+  });
+  it("preserves a new-window form's POST body and referrer when opening its tab", async () => {
+    const browser = controller();
+    const sourceId = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: sourceId,
+      url: "https://example.com/form",
+    });
+    const source = contents(browser, sourceId);
+    const open = source.setWindowOpenHandler.mock.calls[0][0];
+    const referrer = {
+      url: "https://example.com/form",
+      policy: "strict-origin-when-cross-origin",
+    };
+    const postBody = {
+      contentType: "application/x-www-form-urlencoded",
+      data: [{ type: "rawData", bytes: Buffer.from("name=Probe") }],
+    };
+    expect(
+      open({ url: "https://example.com/receipt", referrer, postBody }),
+    ).toEqual({ action: "deny" });
+    expect(browser.state.activeTabId).not.toBe(sourceId);
+    const destination = contents(browser, browser.state.activeTabId);
+    expect(destination.loadURL).toHaveBeenCalledWith(
+      "https://example.com/receipt",
+      {
+        httpReferrer: referrer,
+        postData: postBody.data,
+        extraHeaders: "Content-Type: application/x-www-form-urlencoded",
+      },
+    );
+  });
+
+  it("does not reuse a microphone grant for a camera request", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/",
+    });
+    const page = contents(browser, id);
+    page.commit("https://example.com/");
+    const partition = session.fromPartition(
+      "persist:space-personal",
+    ) as unknown as FakeSession;
+    const request = partition.setPermissionRequestHandler.mock.calls[0][0];
+    const check = partition.setPermissionCheckHandler.mock.calls[0][0];
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 1,
+      checkboxChecked: false,
+    });
+    const microphone = vi.fn();
+    request(page, "media", microphone, {
+      requestingUrl: page.url,
+      isMainFrame: true,
+      mediaTypes: ["audio"],
+    });
+    await Promise.resolve();
+    expect(microphone).toHaveBeenCalledWith(true);
+    expect(
+      check(page, "media", "https://example.com", { mediaType: "audio" }),
+    ).toBe(true);
+    expect(
+      check(page, "media", "https://example.com", { mediaType: "video" }),
+    ).toBe(false);
+    expect(
+      check(page, "media", "https://example.com", { mediaType: "unknown" }),
+    ).toBe(false);
+    expect(dialog.showMessageBox).toHaveBeenLastCalledWith(
+      browser.window,
+      expect.objectContaining({
+        message: "https://example.com wants to use microphone.",
+      }),
+    );
+    vi.mocked(dialog.showMessageBox).mockResolvedValue({
+      response: 0,
+      checkboxChecked: false,
+    });
+    const camera = vi.fn();
+    request(page, "media", camera, {
+      requestingUrl: page.url,
+      isMainFrame: true,
+      mediaTypes: ["video"],
+    });
+    await Promise.resolve();
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(2);
+    expect(camera).toHaveBeenCalledWith(false);
+  });
+
+  it("rejects a pending permission when the requesting space is deleted", async () => {
+    const browser = controller();
+    const tab = browser.state.tabs.find((item) => item.spaceId === "work")!;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: tab.id,
+      url: "https://example.com/",
+    });
+    const page = contents(browser, tab.id);
+    page.commit("https://example.com/");
+    const partition = session.fromPartition(
+      "persist:space-work",
+    ) as unknown as FakeSession;
+    const request = partition.setPermissionRequestHandler.mock.calls[0][0];
+    let answer!: (value: {
+      response: number;
+      checkboxChecked: boolean;
+    }) => void;
+    vi.mocked(dialog.showMessageBox).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const callback = vi.fn();
+    request(page, "notifications", callback, {
+      requestingUrl: page.url,
+      isMainFrame: true,
+    });
+    await browser.dispatch({ type: "space:delete", id: "work" });
+    answer({ response: 1, checkboxChecked: false });
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("rejects a pending permission after a reload at the same URL", async () => {
+    const browser = controller();
+    const tab = browser.state.tabs[0];
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: tab.id,
+      url: "https://example.com/",
+    });
+    const page = contents(browser, tab.id);
+    page.commit("https://example.com/");
+    const partition = session.fromPartition(
+      "persist:space-personal",
+    ) as unknown as FakeSession;
+    const request = partition.setPermissionRequestHandler.mock.calls[0][0];
+    let answer!: (value: {
+      response: number;
+      checkboxChecked: boolean;
+    }) => void;
+    vi.mocked(dialog.showMessageBox).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    const callback = vi.fn();
+    request(page, "notifications", callback, {
+      requestingUrl: page.url,
+      isMainFrame: true,
+    });
+    page.emit("did-start-navigation", {
+      isMainFrame: true,
+      isSameDocument: false,
+    });
+    answer({ response: 1, checkboxChecked: false });
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it("denies website permissions and downloads in human-owned agent spaces", async () => {
+    const browser = controller();
+    await browser.dispatch({
+      type: "space:create",
+      kind: "agent",
+      color: "purple",
+      name: "Manual task",
+    });
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/",
+    });
+    const partition = [...sessions.values()][0];
+    const request = partition.setPermissionRequestHandler.mock.calls[0][0];
+    const callback = vi.fn();
+    request(contents(browser, id), "notifications", callback, {
+      requestingUrl: "https://example.com/",
+      isMainFrame: true,
+    });
+    expect(callback).toHaveBeenCalledExactlyOnceWith(false);
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    const event = { preventDefault: vi.fn() };
+    partition.emit("will-download", event, {});
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(browser.state.downloads).toHaveLength(0);
+  });
+
+  it("keeps unwatched agent pages painting after every navigation, but not personal pages", async () => {
+    const browser = controller();
+    await browser.dispatch({ type: "tab:navigate", id: browser.state.activeTabId, url: "https://example.com/" });
+    const personal = contents(browser, browser.state.activeTabId);
+    await browser.dispatch({ type: "space:create", kind: "agent", color: "purple", name: "Task" });
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    const agent = contents(browser, id);
+    // Chromium paints nothing for a page never shown, and each new document starts hidden.
+    expect(agent.setBackgroundThrottling).toHaveBeenCalledWith(false);
+    const before = agent.setBackgroundThrottling.mock.calls.length;
+    agent.commit("https://example.org/");
+    expect(agent.setBackgroundThrottling.mock.calls.length).toBe(before + 1);
+    expect(agent.setBackgroundThrottling).toHaveBeenLastCalledWith(false);
+    expect(personal.setBackgroundThrottling).not.toHaveBeenCalled();
+  });
+
+  it("enforces the tab limit before creating either kind of space", async () => {
+    const browser = controller();
+    while (browser.state.tabs.length < 200)
+      browser.state.tabs.push(newTab("personal"));
+    const spaces = browser.state.spaces.length;
+    await expect(
+      browser.dispatch({
+        type: "space:create",
+        kind: "personal",
+        color: "green",
+        name: "Full",
+      }),
+    ).rejects.toThrow("200 tabs");
+    await expect(
+      browser.dispatch({
+        type: "space:create",
+        kind: "agent",
+        color: "purple",
+        name: "Full",
+      }),
+    ).rejects.toThrow("200 tabs");
+    expect(() => browser.createAgentSpace("Full")).toThrow("200 tabs");
+    expect(browser.state.spaces).toHaveLength(spaces);
+    expect(browser.state.tabs).toHaveLength(200);
+  });
+
+  it("preserves a closed tab when reopening it would exceed the tab limit", async () => {
+    const browser = controller();
+    const original = browser.state.tabs[0];
+    original.title = "Reopen me";
+    await browser.dispatch({ type: "tab:close", id: original.id });
+    while (browser.state.tabs.length < 200)
+      browser.state.tabs.push(newTab("personal"));
+    await expect(browser.dispatch({ type: "tab:reopen" })).rejects.toThrow(
+      "200 tabs",
+    );
+    expect(browser.state.tabs).toHaveLength(200);
+    await browser.dispatch({
+      type: "tab:close",
+      id: browser.state.tabs.at(-1)!.id,
+    });
+    // Consume the most recently closed tab before retrying the older entry.
+    await browser.dispatch({ type: "tab:reopen" });
+    browser.state.tabs.pop();
+    await browser.dispatch({ type: "tab:reopen" });
+    expect(
+      browser.state.tabs.find((tab) => tab.id === browser.state.activeTabId)
+        ?.title,
+    ).toBe("Reopen me");
+  });
+
+  it("selects the neighboring tab within its own space after closing a tab", async () => {
+    const browser = controller();
+    const work = browser.state.tabs.find((tab) => tab.spaceId === "work")!;
+    const next = newTab("work");
+    const last = newTab("work");
+    browser.state.tabs.push(next, last);
+    await browser.dispatch({ type: "tab:activate", id: work.id });
+    await browser.dispatch({ type: "tab:close", id: work.id });
+    expect(browser.state.activeTabId).toBe(next.id);
+  });
+
+  it("keeps Home active when a removed page finishes stopping", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/",
+    });
+    contents(browser, id).commit("https://example.com/");
+    await browser.dispatch({ type: "tab:navigate", id, url: HOME_URL });
+    expect(browser.state.tabs.find((tab) => tab.id === id)?.url).toBe(HOME_URL);
+    expect(browser.getWebContents(id)).toBeUndefined();
+    expect(WebContentsView).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends split view when opening a new blank tab", async () => {
+    const browser = controller();
+    const first = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: first,
+      url: "https://example.com/",
+    });
+    await browser.dispatch({
+      type: "tab:create",
+      url: "https://example.org/",
+      background: true,
+    });
+    const second = browser.state.tabs.find(
+      (tab) => tab.url === "https://example.org/",
+    )!.id;
+    await browser.dispatch({ type: "tab:split", id: second });
+    await browser.dispatch({ type: "tab:create" });
+    expect(browser.state.splitTabId).toBeNull();
+    expect(viewFor(contents(browser, second)).visible).toBe(false);
+  });
+
+  it("applies page controls to the focused split pane without moving either pane", async () => {
+    const browser = controller();
+    const first = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: first,
+      url: "https://example.com/",
+    });
+    await browser.dispatch({
+      type: "tab:create",
+      url: "https://example.org/",
+      background: true,
+    });
+    const second = browser.state.tabs.find(
+      (tab) => tab.url === "https://example.org/",
+    )!.id;
+    await browser.dispatch({ type: "tab:split", id: second });
+    const left = contents(browser, first);
+    const right = contents(browser, second);
+    const leftBounds = { ...viewFor(left).bounds };
+    const rightBounds = { ...viewFor(right).bounds };
+    right.focus();
+    await browser.dispatch({ type: "page:zoom", direction: "in" });
+    expect(browser.state.activeTabId).toBe(second);
+    expect(right.zoom).toBe(1);
+    expect(left.zoom).toBe(0);
+    expect(viewFor(left).bounds).toEqual(leftBounds);
+    expect(viewFor(right).bounds).toEqual(rightBounds);
+    left.emit("before-mouse-event", {}, { type: "mouseMove" });
+    expect(browser.state.activeTabId).toBe(second);
+    left.emit("before-mouse-event", {}, { type: "mouseDown" });
+    expect(browser.state.activeTabId).toBe(first);
+    expect(viewFor(left).bounds).toEqual(leftBounds);
+  });
+
+  it("ignores a rejected older load after a newer destination succeeds", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/slow",
+    });
+    const page = contents(browser, id);
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/new",
+    });
+    page.commit("https://example.com/new");
+    page.pending[0].reject(new Error("ERR_CONNECTION_RESET"));
+    await Promise.resolve();
+    expect(
+      browser.state.tabs.find((tab) => tab.id === id)?.error,
+    ).toBeUndefined();
+  });
+
+  it("keeps the failed destination visible instead of replacing it with the previous page URL", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/previous",
+    });
+    const page = contents(browser, id);
+    page.commit("https://example.com/previous");
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/failing",
+    });
+    page.emit(
+      "did-fail-load",
+      {},
+      -102,
+      "ERR_CONNECTION_REFUSED",
+      "https://example.com/failing",
+      true,
+    );
+    page.emit("did-stop-loading");
+    expect(browser.state.tabs.find((tab) => tab.id === id)?.url).toBe(
+      "https://example.com/failing",
+    );
+    await browser.dispatch({ type: "tab:reload", id });
+    expect(page.loadURL).toHaveBeenLastCalledWith(
+      "https://example.com/failing",
+    );
+    expect(page.reload).not.toHaveBeenCalled();
+  });
+
+  it("ignores an old request failure after a page starts its own navigation", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/previous",
+    });
+    const page = contents(browser, id);
+    page.emit("did-start-navigation", {
+      isMainFrame: true,
+      isSameDocument: false,
+      url: "https://example.com/new",
+    });
+    page.commit("https://example.com/new");
+    page.pending[0].reject(new Error("ERR_CONNECTION_RESET"));
+    await Promise.resolve();
+    expect(
+      browser.state.tabs.find((tab) => tab.id === id)?.error,
+    ).toBeUndefined();
+  });
+
+  it("keeps a failed page recoverable through unrelated loading notifications", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({
+      type: "tab:navigate",
+      id,
+      url: "https://example.com/failing",
+    });
+    const page = contents(browser, id);
+    page.emit(
+      "did-fail-load",
+      {},
+      -102,
+      "ERR_CONNECTION_REFUSED",
+      "https://example.com/failing",
+      true,
+    );
+    page.emit("did-start-loading");
+    page.emit("did-stop-loading");
+    expect(browser.state.tabs.find((tab) => tab.id === id)?.error).toBe(
+      "ERR_CONNECTION_REFUSED",
+    );
+    await browser.dispatch({ type: "tab:reload", id });
+    expect(
+      browser.state.tabs.find((tab) => tab.id === id)?.error,
+    ).toBeUndefined();
+    expect(page.loadURL).toHaveBeenLastCalledWith(
+      "https://example.com/failing",
+    );
+  });
+
+  it("clears a deleted personal partition even if no tab opened it this launch", async () => {
+    const browser = controller();
+    const existing = session.fromPartition(
+      "persist:space-work",
+    ) as unknown as FakeSession;
+    await browser.dispatch({ type: "space:delete", id: "work" });
+    expect(existing.clearStorageData).toHaveBeenCalledOnce();
+    expect(existing.clearCache).toHaveBeenCalledOnce();
+  });
+
+  it("removes session download listeners when its window closes", async () => {
+    const browser = controller();
+    await browser.dispatch({
+      type: "tab:navigate",
+      id: browser.state.activeTabId,
+      url: "https://example.com/",
+    });
+    const partition = session.fromPartition(
+      "persist:space-personal",
+    ) as unknown as FakeSession;
+    expect(partition.listenerCount("will-download")).toBe(1);
+    browser.dispose();
+    expect(partition.listenerCount("will-download")).toBe(0);
+  });
+});
+
+describe("freeze-frame", () => {
+  it("captures the visible page and leaves it showing", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    const page = contents(browser, id);
+    const view = viewFor(page);
+    expect(view.setBorderRadius).toHaveBeenCalledWith(10);
+    expect(await browser.freeze()).toEqual([
+      { x: 200, y: 80, width: 1000, height: 700, image: jpegOf(1000) },
+    ]);
+    expect(page.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: false });
+    expect(view.visible).toBe(true);
+  });
+
+  it("keeps hidden pages hidden through layouts until unfreeze", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    const view = viewFor(contents(browser, id));
+    browser.hidePages();
+    expect(view.visible).toBe(false);
+    await browser.dispatch({ type: "tab:reload", id });
+    browser.setContentBounds({ x: 200, y: 80, width: 900, height: 700, hidden: false });
+    expect(view.visible).toBe(false);
+    expect(await browser.freeze()).toEqual([]);
+    browser.unfreeze();
+    expect(view.visible).toBe(true);
+    expect(view.bounds.width).toBe(900);
+  });
+
+  it("returns one frame per split pane and keeps the active pane while hidden", async () => {
+    const browser = controller();
+    const first = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id: first, url: "https://example.com/" });
+    await browser.dispatch({ type: "tab:create", url: "https://example.org/", background: true });
+    const second = browser.state.tabs.find((tab) => tab.url === "https://example.org/")!.id;
+    await browser.dispatch({ type: "tab:split", id: second });
+    const frames = await browser.freeze();
+    expect(frames.map(({ x, y, width, height }) => ({ x, y, width, height }))).toEqual([
+      { x: 200, y: 80, width: 496, height: 700 },
+      { x: 704, y: 80, width: 496, height: 700 },
+    ]);
+    browser.hidePages();
+    contents(browser, second).emit("before-mouse-event", {}, { type: "mouseDown" });
+    expect(browser.state.activeTabId).toBe(first);
+  });
+
+  it("returns no image when capture fails, is slow, or the window is minimized", async () => {
+    vi.useFakeTimers();
+    try {
+      const browser = controller();
+      const id = browser.state.activeTabId;
+      await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+      const page = contents(browser, id);
+      page.capturePage.mockReturnValueOnce(new Promise<FakeImage>(() => {}));
+      const slow = browser.freeze();
+      await vi.advanceTimersByTimeAsync(300);
+      expect(await slow).toEqual([]);
+      page.capturePage.mockRejectedValueOnce(new Error("GPU process gone"));
+      expect(await browser.freeze()).toEqual([]);
+      (browser.window as unknown as { isMinimized: () => boolean }).isMinimized = () => true;
+      const calls = page.capturePage.mock.calls.length;
+      expect(await browser.freeze()).toEqual([]);
+      expect(page.capturePage).toHaveBeenCalledTimes(calls);
+      expect(viewFor(page).visible).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("space thumbnails", () => {
+  it("keeps a small capture of a space the person leaves", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    await browser.dispatch({ type: "space:activate", id: "work" });
+    await vi.waitFor(async () =>
+      expect(await browser.thumbnails()).toEqual({ personal: jpegOf(480) }),
+    );
+  });
+
+  it("stores the current space when a popover or the grid freezes the page", async () => {
+    const browser = controller();
+    const id = browser.state.activeTabId;
+    await browser.dispatch({ type: "tab:navigate", id, url: "https://example.com/" });
+    await browser.freeze();
+    expect(await browser.thumbnails()).toEqual({ personal: jpegOf(480) });
+  });
+
+  it("captures agent spaces on request without showing them, and forgets deleted spaces", async () => {
+    const browser = controller();
+    const space = browser.createAgentSpace("Task");
+    const tab = browser.state.tabs.find((item) => item.spaceId === space.id)!;
+    await browser.dispatch({ type: "tab:navigate", id: tab.id, url: "https://example.com/" });
+    const page = contents(browser, tab.id);
+    expect(viewFor(page).visible).toBe(false);
+    expect(await browser.thumbnails()).toEqual({ [space.id]: jpegOf(480) });
+    expect(page.capturePage).toHaveBeenCalledWith(undefined, { stayHidden: true });
+    await browser.dispatch({ type: "space:delete", id: space.id });
+    expect(await browser.thumbnails()).toEqual({});
+  });
+
+  it("shows an agent's latest page, not its blank first tab, in the grid and when opened", async () => {
+    const browser = controller();
+    const space = browser.createAgentSpace("Task");
+    const blank = browser.state.tabs.find((item) => item.spaceId === space.id)!;
+    for (const url of ["https://example.com/one", "https://example.com/two"])
+      await browser.dispatch({ type: "tab:create", spaceId: space.id, url, background: true });
+    const latest = browser.state.tabs.filter((item) => item.spaceId === space.id).at(-1)!;
+    expect(latest.id).not.toBe(blank.id);
+    expect(await browser.thumbnails()).toEqual({ [space.id]: jpegOf(480) });
+    expect(contents(browser, latest.id).capturePage).toHaveBeenCalled();
+    await browser.dispatch({ type: "space:activate", id: space.id });
+    expect(browser.state.activeTabId).toBe(latest.id);
+  });
+});
+
+describe("keyboard shortcuts", () => {
+  const primary =
+    process.platform === "darwin" ? { meta: true } : { control: true };
+  function press(browser: BrowserController, input: Record<string, unknown>) {
+    const shell = browser.window.webContents as unknown as FakeContents;
+    shell.send.mockClear();
+    shell.emit(
+      "before-input-event",
+      { preventDefault: vi.fn() },
+      {
+        type: "keyDown",
+        key: "",
+        code: "",
+        meta: false,
+        control: false,
+        alt: false,
+        shift: false,
+        ...input,
+      },
+    );
+    return shell.send.mock.calls.find(
+      ([channel]) => channel === "kamapathy:shortcut",
+    )?.[1];
+  }
+  it("has no sidebar shortcut", () => {
+    const browser = controller();
+    expect(press(browser, { ...primary, key: "b", code: "KeyB" })).toBeUndefined();
+  });
+  it("leaves Option+S to web pages and text fields", () => {
+    const browser = controller();
+    expect(press(browser, { alt: true, key: "ß", code: "KeyS" })).toBeUndefined();
+  });
+  it("opens bookmarks, history and downloads from the keyboard", () => {
+    const browser = controller();
+    expect(press(browser, { ...primary, shift: true, key: "B", code: "KeyB" })).toBe("bookmarks");
+    const history =
+      process.platform === "darwin"
+        ? { key: "y", code: "KeyY" }
+        : { key: "h", code: "KeyH" };
+    expect(press(browser, { ...primary, ...history })).toBe("history");
+    expect(press(browser, { ...primary, shift: true, key: "J", code: "KeyJ" })).toBe("downloads");
+    expect(press(browser, { ...primary, key: "j", code: "KeyJ" })).toBeUndefined();
+  });
+});

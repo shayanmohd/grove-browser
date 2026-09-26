@@ -1,0 +1,61 @@
+{
+  "tokenizer": "o200k_base",
+  "tokenizerPackage": "js-tiktoken@1.0.21",
+  "source": "Captured local Chromium observations, normalized loopback port 3000",
+  "capturedAt": "2026-09-11",
+  "kamapathyVersion": "0.1.0",
+  "fixtures": [
+    {
+      "name": "form",
+      "kamapathy": {
+        "characters": 531,
+        "tokens": 148,
+        "sha256": "64158a3a9cafbac15a84d564075e4fc26907ef7bd1acf33a816efb857e1fac62"
+      }
+    },
+    {
+      "name": "created-form",
+      "kamapathy": {
+        "characters": 920,
+        "tokens": 247,
+        "sha256": "3d8b87f40fe380b73229c964fc4ee06231ebbc88e45d736e3a080a090fae2cea"
+      }
+    },
+    {
+      "name": "receipt",
+      "kamapathy": {
+        "characters": 636,
+        "tokens": 155,
+        "sha256": "a259bb6cca8d8b55a6fc59d55d413e7ca379da58058d8722c5f240b7494bf380"
+      }
+    },
+    {
+      "name": "reference",
+      "kamapathy": {
+        "characters": 4933,
+        "tokens": 1055,
+        "sha256": "e1dcb5c4182aaf4ba8639711d06b2f8f541f95e6e5836ac9d52d3265c1e71ed8"
+      }
+    }
+  ],
+  "totals": {
+    "kamapathyTokens": 1605
+  },
+  "kamapathySkill": {
+    "SKILL.md": {
+      "characters": 3553,
+      "tokens": 726,
+      "sha256": "2393a741b9dcdc7001306edb693c3fa9405a1c0a2dfffb239977851bb7c4adfa"
+    },
+    "references/actions.md": {
+      "characters": 5608,
+      "tokens": 1299,
+      "sha256": "92be2f6bec35dd17a96bd832e24cd2939c70b02e85cb9e656eb8d16272f46465"
+    },
+    "references/connection.md": {
+      "characters": 2225,
+      "tokens": 438,
+      "sha256": "e647452dbfa567193ad753984fa7e58c700f4639bb9e07c34215b3c00021bb05"
+    }
+  }
+}

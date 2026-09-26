@@ -1,0 +1,49 @@
+# Security model
+
+Kamapathy is an early desktop browser project. It uses Electron's Chromium engine and isolation controls, but it has not been independently audited. This document describes the implementation boundaries and remaining limitations.
+
+## Remote pages and browser controls
+
+Remote pages run in native `WebContentsView` instances with Node.js integration disabled, context isolation enabled, and renderer sandboxing enabled. Only the local browser shell receives the preload bridge. Remote content must not receive native browser actions or access to the automation API.
+
+The address bar accepts HTTP and HTTPS pages, search text, and the internal new tab destination. Unsupported schemes and credential bearing URLs are rejected. Loopback HTTP addresses remain available for local development. These controls do not classify the trustworthiness of a website.
+
+Native IPC checks the sending renderer and its main frame. Website popups open as browser tabs. Personal spaces ask for site permissions through a native prompt. Microphone and camera grants are separate, tied to the requesting origin and session. Pending permission responses are rejected after their space is deleted or the page changes. Agent spaces deny permission requests and downloads.
+
+Google may block authentication in the embedded desktop engine. The rejection-page notice offers a human-clicked default-browser action through trusted shell IPC. It opens only a fixed public Google or Play Console URL for the active rejected tab, without forwarding authentication parameters, cookies, or credentials. The agent API has no external-browser route. This does not authenticate the Kamapathy session.
+
+## Spaces and local data
+
+Personal spaces have persistent, separate Electron session partitions. Agent spaces start in fresh temporary partitions and do not reuse personal cookies. Space isolation does not isolate operating system accounts or provide a separate virtual machine.
+
+Bookmarks, history, settings, and restored personal tabs are written to the app's user data directory. Chromium stores cookies and site storage within that profile. Kamapathy does not add an encrypted vault for application state. Downloaded files remain on disk after a space or tab closes. Clearing history does not erase downloaded files, cookies, or other site storage.
+
+The activity feed is visible runtime state, not an immutable audit log. An application restart clears it. Avoid treating it as evidence that all activity on a page has been recorded.
+
+## Local automation
+
+The automation API is on by default and can be turned off in Settings, under Agents; a saved choice to turn it off is kept. It listens only on a Unix socket inside a private per-profile directory, or on a Windows named pipe with a new random name each start, and never on a network port. There is no token: the trust boundary is your operating system account. Any program running as you can use the API while it is on, and other accounts cannot open it. The server also rejects browser Origin and Sec-Fetch requests and does not enable CORS. The bundled client refuses agent files and folders that another account could read or replace, and sends no command until the server returns the random instance value Kamapathy recorded privately at start, so a program that later takes over a socket or Windows pipe name receives nothing. When agent access is off, the client never starts Kamapathy. Automatic starts run only a recorded program whose path no other account can write, and never open a debugging port.
+
+The API can access spaces it created and agent spaces the user explicitly grants to that running connection. Page reads and actions require agent ownership. The UI exposes activity and lets the user take control, after which subsequent agent operations in that space are denied until control returns to the agent. The user can return it in the interface, or an agent can take it back at any time through the `resume` route, which reaches only those same spaces and records an activity entry. Taking control therefore pauses an agent that follows the skill's guidance, but it does not stop a program that ignores it. Turning agent access off is the hard stop: the server refuses every request, including `resume`, and after access is turned on again it does not reclaim earlier spaces without a new grant.
+
+The API supports bounded DOM snapshots, navigation, trusted clicks, keys and drags, field filling, file selection, scrolling, conditional waits, sequential batches, and viewport screenshots. It does not expose arbitrary JavaScript evaluation, Node.js, or a general filesystem interface. Its DOM operations cover the main document; iframe and shadow DOM automation are not implemented. Batches check ownership between steps and report completed actions when a later action fails. Navigation invalidates refs and cancels prepared snapshot, focus, click, or drag results that belong to the previous document. When a page replaces a ref's element, the ref can follow the control drawn in its place, but only on the same document and URL, only to an element with the same tag, role, type, label, group question, and surrounding text that no other ref holds, only when the control looked like no other visible control when it was listed, and only when exactly one element matches or the match is at the same position in the page. The response names every ref that moved. File-input refs are never re-bound by any action, so files reach only the input an agent observed. A control drawn with no size is clicked with an untrusted DOM click only when its surroundings are on screen and uncovered, and the response says so. An HTML drag is intercepted so that Chromium never starts an operating system drag, and it is cancelled if the person takes over. Snapshots show current field values so agents can check their work, including values a person typed during a handoff. Password inputs, fields whose autocomplete marks a current or new password, a one-time code, or payment card data, and masked fields report only that a value is hidden. Website text can still echo a hidden value, so this is not comprehensive redaction.
+
+File selection accepts supplied bytes for a current file-input ref. The local client reads 1 to 8 selected regular files totaling at most 16 MiB, then transfers their basenames, MIME types, and bytes through the local agent socket. The API handles those bytes in memory and does not accept paths to read from the browser machine. Only the upload route permits a 24 MiB JSON body; other requests remain limited to 64 KiB. One transfer can be pending at a time, with ownership and document checks before it reaches the input. The input must be visible or hidden inside visible parent UI; inert, aria-hidden, disabled, and directory inputs are rejected. File selection is not a batch operation.
+
+Selecting files dispatches input and change events and can immediately transmit them to the website. The user's authorization must cover the selected files and destination before that command runs. Taking control cannot retract bytes already sent to a site. Responses and activity report selection counts rather than file contents or local paths; the website still receives basenames and bytes and can display or retain them. Sites requiring trusted native chooser events or native file handles are outside this action's support. Verify a site's final receipt before treating selection as a completed upload, and inspect its state before any retry.
+
+Any program running under your account can exercise the API's allowed capabilities while agent access is on. Only run agents and tools you trust, and turn agent access off when you do not want local programs driving agent spaces. The socket is not a defense against an already compromised local account.
+
+Temporary sessions prevent passive sharing of personal sign ins. They do not undo actions an agent performs on a remote website. A form submission or purchase remains an external action. Review the [automation guide](automation.md) for the precise endpoints, ownership checks, and validation limits.
+
+## Release work
+
+Development artifacts are unsigned and are not automatically updated. Keep Electron and other dependencies current during development. A production release still needs operating system signing, macOS notarization, an update policy, broader operating system testing, and a security review of browser and automation boundaries.
+
+Kamapathy does not currently provide an extension permission model, credential manager, phishing reputation service, or audited privacy mode. Its separate spaces are not a claim of anonymous browsing.
+
+## Reporting a vulnerability
+
+Use the repository's private vulnerability reporting feature if it is available. Otherwise contact the repository owner through their published contact details and ask for a private reporting channel. Do not publish exploit details or personal profile data in a public issue before maintainers have had a chance to assess the report.
+
+Include the affected Kamapathy version, operating system, minimal reproduction steps using nonpersonal test data, and the boundary you believe is bypassed. Never attach a real browser profile or session cookie.

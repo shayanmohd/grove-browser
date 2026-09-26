@@ -1,0 +1,54 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+.toolbar > .icon-button {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+}
+.omnibox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  margin: 0 6px;
+  padding: 0 4px 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--raised);
+  color: var(--secondary);
+}
+.omnibox.focused {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+.omnibox input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+.omnibox input:read-only {
+  color: var(--secondary);
+}
+.omnibox-icon {
+  display: flex;
+}
+.omnibox .icon-button {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+}
+.omnibox .is-bookmarked {
+  color: var(--text);
+}

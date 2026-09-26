@@ -1,0 +1,25 @@
+# Connection
+
+Kamapathy connects automatically. There is no token, copied file, or setup step. Every command finds Kamapathy on this computer through the profile's agent folder. If Kamapathy is not running and agent access was left on, the client starts Kamapathy and waits up to 30 seconds for it. The web preview has no automation service.
+
+## How the client finds Kamapathy
+
+Each Kamapathy profile keeps a private agent folder: `Kamapathy/agent` inside the operating system's application data folder (`~/Library/Application Support` on macOS, `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` on Linux). While agent access is on, Kamapathy listens on a local socket there, or in a new private temporary folder when the profile path is too long for a socket. On Windows it uses a named pipe with a new random name each start. Set `KAMAPATHY_USER_DATA` to reach a different profile, such as a test instance.
+
+Each start also records a random instance value that only your account can read, and Kamapathy returns it on every response. The client checks it before sending a command, so a program that took over an old socket or pipe name receives nothing. On macOS and Linux, the client refuses an agent folder or file that another account could read or replace, a symbolic link in place of a file, and a socket outside a private folder. Windows relies on the per-user permissions of `%APPDATA%`, which portable Node.js cannot inspect.
+
+## When it does not connect
+
+- **Agent access is turned off in Kamapathy.** The person switched it off in Settings, under Agents. Ask them to turn it on. The client never starts Kamapathy while access is off.
+- **Kamapathy is not running.** Automatic starting is disabled by `KAMAPATHY_NO_LAUNCH=1`. Ask the person to open Kamapathy.
+- **Kamapathy has not started with this profile yet.** A profile named by `KAMAPATHY_USER_DATA` is started only from its own launch record, which Kamapathy writes the first time it runs with that profile. The client also skips a recorded program that another account could have replaced.
+- **Kamapathy did not accept agents within 30 seconds.** Kamapathy may be showing an error. If Recent activity in Settings says the agent service could not start, turning agent access off and on retries it.
+- **Permission denied.** An agent sandbox can block local sockets. Run the command with local socket access or outside the sandbox.
+
+## What agents can reach
+
+Any program running under the person's account can use Kamapathy's agent spaces while agent access is on, the same boundary as other local developer tools. The API controls only agent spaces created during its current session or explicitly granted to it through Kamapathy's interface. Personal spaces and their logins remain inaccessible, and each agent space has its own temporary session. If a website needs authentication, hand the agent space to the person to log in. When they say they have signed in, take it back with `resume SPACE_ID`, or wait for them to return control in Kamapathy.
+
+For human authentication, launch the installed Kamapathy app or use `npm start` from a built source checkout. Review harnesses such as Playwright can add automation flags: the initial Google sign-in test exposed WebDriver, while a normal desktop launch did not. Do not use a review harness to judge normal sign-in compatibility.
+
+There is no MCP connection, DevTools or remote-debugging port, Playwright endpoint, or browser-wide JavaScript execution command, and automatic starts never open one. Use this helper or Kamapathy's documented HTTP API over the local socket. Never try to recover access to a paused space by creating a new session or substituting the person's personal browser.

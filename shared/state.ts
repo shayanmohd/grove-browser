@@ -1,0 +1,109 @@
+import type { BrowserState, Tab } from "./types";
+import { version } from "../package.json";
+
+export const HOME_URL = "kamapathy://newtab";
+export const id = () => globalThis.crypto.randomUUID();
+export function newTab(spaceId: string, url = HOME_URL): Tab {
+  return {
+    id: id(),
+    spaceId,
+    url,
+    title: url === HOME_URL ? "New tab" : url,
+    pinned: false,
+    loading: false,
+    canGoBack: false,
+    canGoForward: false,
+  };
+}
+// The tab a space opens on: the one it last showed, else an agent's latest
+// page (agents open pages beside a blank first tab), else its first tab.
+export function openingTab(
+  state: BrowserState,
+  spaceId: string,
+  lastShown?: string,
+): Tab | undefined {
+  const tabs = state.tabs.filter((tab) => tab.spaceId === spaceId);
+  const agent =
+    state.spaces.find((space) => space.id === spaceId)?.kind === "agent";
+  return (
+    tabs.find((tab) => tab.id === lastShown) ??
+    (agent ? tabs.filter((tab) => tab.url !== HOME_URL).at(-1) : undefined) ??
+    tabs[0]
+  );
+}
+export function initialState(
+  platform: BrowserState["platform"] = "web",
+): BrowserState {
+  const now = Date.now();
+  const tab = newTab("personal");
+  return {
+    spaces: [
+      {
+        id: "personal",
+        name: "Personal",
+        color: "green",
+        kind: "personal",
+        owner: "human",
+        createdAt: now,
+      },
+      {
+        id: "work",
+        name: "Work",
+        color: "blue",
+        kind: "personal",
+        owner: "human",
+        createdAt: now,
+      },
+    ],
+    tabs: [tab, newTab("work")],
+    activeSpaceId: "personal",
+    activeTabId: tab.id,
+    splitTabId: null,
+    bookmarks: [
+      {
+        id: "github",
+        title: "GitHub",
+        url: "https://github.com",
+        createdAt: now,
+      },
+      {
+        id: "figma",
+        title: "Figma",
+        url: "https://www.figma.com",
+        createdAt: now,
+      },
+      {
+        id: "linear",
+        title: "Linear",
+        url: "https://linear.app",
+        createdAt: now,
+      },
+      {
+        id: "notion",
+        title: "Notion",
+        url: "https://www.notion.so",
+        createdAt: now,
+      },
+      {
+        id: "youtube",
+        title: "YouTube",
+        url: "https://www.youtube.com",
+        createdAt: now,
+      },
+    ],
+    history: [],
+    downloads: [],
+    activity: [],
+    settings: {
+      theme: "system",
+      searchEngine: "duckduckgo",
+      restoreSession: true,
+      showBookmarksBar: false,
+      // Local agents may connect unless the person turns this off.
+      automationEnabled: true,
+    },
+    platform,
+    version,
+    automation: { running: false },
+  };
+}

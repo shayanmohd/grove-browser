@@ -1,0 +1,76 @@
+appId: app.kamapathy.browser
+productName: Kamapathy
+copyright: Copyright (c) 2026 Kamapathy contributors
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  - LICENSE
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+  - from: build/icon.ico
+    to: icon.ico
+publish: null
+mac:
+  category: public.app-category.productivity
+  icon: build/icon.icns
+  darkModeSupport: true
+  identity: "-"
+  hardenedRuntime: false
+  notarize: false
+  target:
+    - dmg
+    - zip
+  artifactName: Kamapathy-${version}-mac-${arch}.${ext}
+dmg:
+  title: Kamapathy
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+  artifactName: Kamapathy-${version}-windows-${arch}.${ext}
+nsis:
+  artifactName: Kamapathy-${version}-windows-${arch}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Kamapathy
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: Kamapathy-${version}-windows-${arch}-portable.${ext}
+linux:
+  executableName: kamapathy
+  syncDesktopName: true
+  icon: build/icon.png
+  category: Network
+  synopsis: A focused browser with spaces for people and agents
+  description: Browse with tabs across the top, isolated spaces, split view, and an optional local automation API.
+  maintainer: Kamapathy contributors
+  vendor: Kamapathy contributors
+  target:
+    - AppImage
+    - deb
+  artifactName: Kamapathy-${version}-linux-${arch}.${ext}
+  desktop:
+    entry:
+      Name: Kamapathy
+      Comment: A little more room to think
+      Categories: Network;WebBrowser;
+      Keywords: browser;web;spaces;automation;
+      StartupWMClass: app.kamapathy.browser
+      Terminal: "false"
