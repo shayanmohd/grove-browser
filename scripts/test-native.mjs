@@ -197,6 +197,67 @@ try {
   assert.equal((await blocked.response.json()).error.code, "cross_origin_frame");
   passed("a frame from another origin is listed and refuses actions");
 
+  const hosted = await open("/frames/shadow-frame");
+  const widget = await poll(
+    async () => {
+      const page = await snapshot(hosted);
+      return byLabel(page, "Count clicks") ? page : null;
+    },
+    { timeoutMs: 10000, label: "the shadow hosted frame fixture" },
+  );
+  assert.equal(byLabel(widget, "Count clicks").frame, "0");
+  const counted = await api(`/tabs/${hosted}/click`, "POST", {
+    ref: byLabel(widget, "Count clicks").ref,
+  });
+  assert.equal(counted.status, 200, JSON.stringify(await counted.response.json()));
+  assert.match((await snapshot(hosted)).text, /Counted 1/);
+  const word = byLabel(widget, "Embedded word").ref;
+  const typed = await api(`/tabs/${hosted}/fill`, "POST", { ref: word, value: "hi" });
+  assert.equal(typed.status, 200, JSON.stringify(await typed.response.json()));
+  const pressed = await api(`/tabs/${hosted}/press`, "POST", { key: "Enter", ref: word });
+  assert.equal(pressed.status, 200, JSON.stringify(await pressed.response.json()));
+  assert.match((await snapshot(hosted)).text, /Entered hi/);
+  passed("native clicks and key presses reach a frame hosted by a shadow root");
+
+  const scroller = await open("/frames/scroller");
+  const list = await poll(
+    async () => {
+      const page = await snapshot(scroller);
+      return byLabel(page, "First item") ? page : null;
+    },
+    { timeoutMs: 10000, label: "the frame scroller fixture" },
+  );
+  const scrolled = await json(`/tabs/${scroller}/scroll`, "POST", {
+    direction: "down",
+    pixels: 600,
+    ref: byLabel(list, "First item").ref,
+  });
+  assert.deepEqual(
+    [scrolled.scrolled, scrolled.y, scrolled.moved],
+    ["page", 600, true],
+    JSON.stringify(scrolled),
+  );
+  passed("scrolling a control inside a frame scrolls that frame");
+
+  const scaled = await open("/frames/scaled");
+  const grids = await poll(
+    async () => {
+      const page = await snapshot(scaled);
+      const targets = page.interactables.filter((control) => control.label === "Target");
+      return targets.length === 2 ? page : null;
+    },
+    { timeoutMs: 10000, label: "the scaled frames fixture" },
+  );
+  for (const [frame, title] of [["0", "Scaled grid"], ["1", "Zoomed grid"]]) {
+    const control = grids.interactables.find(
+      (control) => control.label === "Target" && control.frame === frame,
+    );
+    const hit = await api(`/tabs/${scaled}/click`, "POST", { ref: control.ref });
+    assert.equal(hit.status, 200, JSON.stringify(await hit.response.json()));
+    assert.match((await snapshot(scaled)).text, new RegExp(`${title} hit Target`));
+  }
+  passed("native clicks land inside frames drawn at another scale");
+
   const shot = await api(`/tabs/${click}/screenshot`);
   assert.equal(shot.status, 200);
   const png = Buffer.from(await shot.response.arrayBuffer());

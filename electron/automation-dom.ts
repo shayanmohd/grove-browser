@@ -126,6 +126,28 @@ export function pageOperation(
   };
   const live = (element: Element) =>
     element.isConnected && framesOf(element) !== undefined;
+  // The frames of one document in the order a person sees them, through open
+  // shadow roots, which querySelectorAll does not enter. A component hosting
+  // a frame in its shadow root would otherwise leave that frame out of the
+  // frame paths, the input counters and selector searches.
+  const frameLists = new Map<Document, Element[]>();
+  const framesIn = (doc: Document) => {
+    let frames = frameLists.get(doc);
+    if (!frames) {
+      const found: Element[] = [];
+      walk(doc, (node) => {
+        if (
+          !isElement(node) ||
+          (node.localName !== "iframe" && node.localName !== "frame")
+        )
+          return;
+        found.push(node);
+        return false;
+      });
+      frameLists.set(doc, (frames = found));
+    }
+    return frames;
+  };
   // This document, then every same-origin frame document, depth first.
   let docs: Document[] | undefined;
   const documents = () => {
@@ -133,7 +155,7 @@ export function pageOperation(
       const found: Document[] = [];
       const collect = (doc: Document) => {
         found.push(doc);
-        for (const frame of doc.querySelectorAll("iframe,frame")) {
+        for (const frame of framesIn(doc)) {
           const inner = frameDocument(frame);
           if (inner) collect(inner);
         }
@@ -143,29 +165,25 @@ export function pageOperation(
     }
     return docs;
   };
-  // Selectors match across this document and the frames it can read.
+  // A selector resolves in this document first, then in the frames it can
+  // read, depth first, and the first document where it matches decides.
   const matching = (selector: string) => {
-    const found: Element[] = [];
-    for (const doc of documents())
-      for (const element of doc.querySelectorAll(selector)) found.push(element);
-    return found;
+    for (const doc of documents()) {
+      const found = Array.from(doc.querySelectorAll(selector));
+      if (found.length) return found;
+    }
+    return [] as Element[];
   };
   // Frames are named by their index among the frames of the document around
   // them, such as "0" or "0/1" for a frame inside the first frame.
   const framePath = (element: Element) =>
     (framesOf(element) || [])
-      .map((frame) =>
-        Array.prototype.indexOf.call(
-          docOf(frame).querySelectorAll("iframe,frame"),
-          frame,
-        ),
-      )
+      .map((frame) => framesIn(docOf(frame)).indexOf(frame))
       .join("/");
   const documentAt = (path: string) => {
     let doc: Document | null = document;
     for (const index of path ? path.split("/") : []) {
-      const frame: Element | undefined =
-        doc.querySelectorAll("iframe,frame")[Number(index)];
+      const frame: Element | undefined = framesIn(doc)[Number(index)];
       doc = frame ? frameDocument(frame) : null;
       if (!doc) return null;
     }
@@ -218,13 +236,20 @@ export function pageOperation(
     if (root.nodeType === 1) descend(root as Element);
     else into(root.childNodes);
   };
-  // Where a frame's document begins inside the document around it.
+  // Where a frame's document begins inside the document around it, and how
+  // much a CSS transform or zoom on the frame scales what it shows: its drawn
+  // size against its layout size.
   const frameOrigin = (frame: Element) => {
     const box = frame.getBoundingClientRect();
     const style = styleOf(frame);
+    const { offsetWidth, offsetHeight } = frame as HTMLElement;
+    const scaleX = offsetWidth ? box.width / offsetWidth : 1;
+    const scaleY = offsetHeight ? box.height / offsetHeight : 1;
     return {
-      x: box.left + frame.clientLeft + parseFloat(style.paddingLeft),
-      y: box.top + frame.clientTop + parseFloat(style.paddingTop),
+      x: box.left + (frame.clientLeft + parseFloat(style.paddingLeft)) * scaleX,
+      y: box.top + (frame.clientTop + parseFloat(style.paddingTop)) * scaleY,
+      scaleX,
+      scaleY,
     };
   };
   // Where an element sits in the top viewport, through the frames around it,
@@ -233,22 +258,32 @@ export function pageOperation(
     const box = element.getBoundingClientRect();
     const clip = { left: 0, top: 0, right: innerWidth, bottom: innerHeight };
     let x = 0,
-      y = 0;
+      y = 0,
+      scaleX = 1,
+      scaleY = 1;
     for (const frame of framesOf(element) || []) {
       const origin = frameOrigin(frame);
-      x += origin.x;
-      y += origin.y;
+      x += origin.x * scaleX;
+      y += origin.y * scaleY;
+      scaleX *= origin.scaleX;
+      scaleY *= origin.scaleY;
       const inner = frameDocument(frame)?.documentElement;
       clip.left = Math.max(clip.left, x);
       clip.top = Math.max(clip.top, y);
-      clip.right = Math.min(clip.right, x + (inner || frame).clientWidth);
-      clip.bottom = Math.min(clip.bottom, y + (inner || frame).clientHeight);
+      clip.right = Math.min(
+        clip.right,
+        x + (inner || frame).clientWidth * scaleX,
+      );
+      clip.bottom = Math.min(
+        clip.bottom,
+        y + (inner || frame).clientHeight * scaleY,
+      );
     }
     return {
-      left: box.left + x,
-      top: box.top + y,
-      right: box.right + x,
-      bottom: box.bottom + y,
+      left: x + box.left * scaleX,
+      top: y + box.top * scaleY,
+      right: x + box.right * scaleX,
+      bottom: y + box.bottom * scaleY,
       clip,
     };
   };
@@ -268,8 +303,8 @@ export function pageOperation(
     for (const frame of framesOf(element) || []) {
       if (deep(docOf(frame)) !== frame) return null;
       const origin = frameOrigin(frame);
-      x -= origin.x;
-      y -= origin.y;
+      x = (x - origin.x) / origin.scaleX;
+      y = (y - origin.y) / origin.scaleY;
     }
     return deep(docOf(element));
   };
@@ -310,6 +345,14 @@ export function pageOperation(
         (inherited.opacity === "0" && !transparentControl) ||
         inherited.display === "none" ||
         inherited.contentVisibility === "hidden"
+      )
+        return false;
+      // Visibility does not inherit into a frame's document, so the frame
+      // showing it is checked itself.
+      if (
+        ancestor !== element &&
+        frameDocument(ancestor) &&
+        /^(hidden|collapse)$/.test(inherited.visibility)
       )
         return false;
       boundary = !ancestor.parentElement;
@@ -438,12 +481,11 @@ export function pageOperation(
     );
   };
   const selectorFor = (element: Element) => {
-    if (
-      element.id &&
-      element.id.length <= 512 &&
-      matching(`#${CSS.escape(element.id)}`).length === 1
-    )
-      return `#${CSS.escape(element.id)}`;
+    if (element.id && element.id.length <= 512) {
+      const found = matching(`#${CSS.escape(element.id)}`);
+      if (found.length === 1 && found[0] === element)
+        return `#${CSS.escape(element.id)}`;
+    }
     const path: string[] = [];
     let current: Element | null = element;
     while (
@@ -1475,40 +1517,46 @@ export function pageOperation(
         )
       );
     };
-    // The page scrolls unless its overflow, set on the root or passed on from
-    // the body, keeps a person from scrolling it.
-    const root = document.scrollingElement || document.documentElement;
-    const rootStyle = styleOf(document.documentElement);
-    const viewport =
-      rootStyle.overflowX === "visible" &&
-      rootStyle.overflowY === "visible" &&
-      document.body
-        ? styleOf(document.body)
-        : rootStyle;
-    const pageBox = (element: Element) =>
-      element === root ||
-      element === document.documentElement ||
-      (element === document.body && viewport !== rootStyle);
-    const pageScrolls =
-      !/^(hidden|clip)$/.test(
-        vertical ? viewport.overflowY : viewport.overflowX,
-      ) &&
-      room(
-        vertical ? scrollY : scrollX,
-        vertical
-          ? root.scrollHeight - root.clientHeight
-          : root.scrollWidth - root.clientWidth,
-        rootStyle.direction === "rtl",
-      );
-    // A target scrolls the panel holding it. Without one, a page that cannot
-    // scroll this way scrolls the panel under the middle of the viewport.
+    // A target scrolls the panel holding it, and its own document is the
+    // page, so a control inside a frame scrolls that frame. Without a target,
+    // a page that cannot scroll this way scrolls the panel under the middle
+    // of the viewport.
     let start: Element | null = null;
+    let doc = document;
     if (payload.ref !== undefined || payload.selector !== undefined) {
       const element = target();
       if (!isElement(element)) return element;
       if (!visible(element)) return failure("Element is not visible.");
       start = element;
-    } else if (!pageScrolls)
+      doc = docOf(element);
+    }
+    const view = doc.defaultView || window;
+    // The page scrolls unless its overflow, set on the root or passed on from
+    // the body, keeps a person from scrolling it.
+    const root = doc.scrollingElement || doc.documentElement;
+    const rootStyle = styleOf(doc.documentElement);
+    const viewport =
+      rootStyle.overflowX === "visible" &&
+      rootStyle.overflowY === "visible" &&
+      doc.body
+        ? styleOf(doc.body)
+        : rootStyle;
+    const pageBox = (element: Element) =>
+      element === root ||
+      element === doc.documentElement ||
+      (element === doc.body && viewport !== rootStyle);
+    const pageScrolls =
+      !/^(hidden|clip)$/.test(
+        vertical ? viewport.overflowY : viewport.overflowX,
+      ) &&
+      room(
+        vertical ? view.scrollY : view.scrollX,
+        vertical
+          ? root.scrollHeight - root.clientHeight
+          : root.scrollWidth - root.clientWidth,
+        rootStyle.direction === "rtl",
+      );
+    if (!start && !pageScrolls)
       start = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
     let panel: Element | undefined;
     for (
@@ -1521,13 +1569,15 @@ export function pageOperation(
         break;
       }
     const offsets = () =>
-      panel ? [panel.scrollLeft, panel.scrollTop] : [scrollX, scrollY];
+      panel
+        ? [panel.scrollLeft, panel.scrollTop]
+        : [view.scrollX, view.scrollY];
     const before = offsets();
     // Scripts can scroll a page a person cannot, such as the page behind a
     // modal that locks scrolling. A wheel would leave it still, and so does
     // Kamapathy.
     if (panel || pageScrolls)
-      (panel || window).scrollBy({
+      (panel || view).scrollBy({
         left:
           direction === "right" ? pixels : direction === "left" ? -pixels : 0,
         top: direction === "down" ? pixels : direction === "up" ? -pixels : 0,
