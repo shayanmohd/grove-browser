@@ -578,6 +578,7 @@ async function runScript(args, options) {
   process.on("unhandledRejection", rejected);
   process.once("exit", exited);
   process.once("beforeExit", stalled);
+  let outcome = 0;
   try {
     if (source !== undefined) {
       temporary = join(tmpdir(), `kamapathy-run-${randomBytes(8).toString("hex")}.mjs`);
@@ -585,14 +586,15 @@ async function runScript(args, options) {
       file = temporary;
     }
     await import(pathToFileURL(file).href);
-    return failed ? 1 : 0;
   } catch (error) {
     report(error);
-    return 1;
+    outcome = 1;
   } finally {
     process.off("beforeExit", stalled);
     if (temporary) await rm(temporary, { force: true });
   }
+  // A rejection can land while the file is being removed, so this comes last.
+  return failed ? 1 : outcome;
 }
 
 const STATES = {
