@@ -189,6 +189,102 @@ function readJson(path: string): unknown {
   }
 }
 
+const entities: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+};
+function decodeXml(text: string): string {
+  return text.replace(
+    /&(?:#x([0-9a-fA-F]+)|#([0-9]+)|(amp|lt|gt|quot|apos));/g,
+    (_, hex?: string, decimal?: string, name?: string) =>
+      name
+        ? entities[name]
+        : String.fromCodePoint(hex ? parseInt(hex, 16) : Number(decimal)),
+  );
+}
+
+interface Tag {
+  name: string;
+  closing: boolean;
+  empty: boolean;
+  end: number;
+}
+// plutil refuses to write a plist with a <date> as JSON, and every Safari
+// Reading List entry has one, so plists are converted to XML and read here.
+export function parsePlistXml(xml: string): unknown {
+  const tags = /<(\/?)([a-z]+)[^>]*?(\/?)>|<[^>]*>/g;
+  const next = (): Tag | undefined => {
+    for (let match = tags.exec(xml); match; match = tags.exec(xml))
+      if (match[2])
+        return {
+          name: match[2],
+          closing: match[1] === "/",
+          empty: match[3] === "/",
+          end: match.index + match[0].length,
+        };
+    return undefined;
+  };
+  const open = (): Tag => {
+    const tag = next();
+    if (!tag || tag.closing) throw new SyntaxError("Malformed plist");
+    return tag;
+  };
+  const text = (tag: Tag): string => {
+    if (tag.empty) return "";
+    const close = xml.indexOf(`</${tag.name}>`, tag.end);
+    if (close < 0) throw new SyntaxError(`Unterminated <${tag.name}>`);
+    tags.lastIndex = close + tag.name.length + 3;
+    return decodeXml(xml.slice(tag.end, close));
+  };
+  const children = (tag: Tag, each: (child: Tag) => void) => {
+    if (tag.empty) return;
+    for (let child = next(); ; child = next()) {
+      if (!child || (child.closing && child.name !== tag.name))
+        throw new SyntaxError(`Unterminated <${tag.name}>`);
+      if (child.closing) return;
+      each(child);
+    }
+  };
+  const value = (tag: Tag): unknown => {
+    switch (tag.name) {
+      case "dict": {
+        const dict: Record<string, unknown> = {};
+        children(tag, (child) => {
+          if (child.name !== "key") throw new SyntaxError("Expected <key>");
+          dict[text(child)] = value(open());
+        });
+        return dict;
+      }
+      case "array": {
+        const list: unknown[] = [];
+        children(tag, (child) => list.push(value(child)));
+        return list;
+      }
+      case "string":
+        return text(tag);
+      case "integer":
+      case "real":
+        return Number(text(tag));
+      case "true":
+        return true;
+      case "false":
+        return false;
+      case "date":
+        return new Date(text(tag).trim()).toISOString();
+      case "data":
+        return text(tag).replace(/\s+/g, "");
+      default:
+        throw new SyntaxError(`Unexpected <${tag.name}>`);
+    }
+  };
+  let root = open();
+  if (root.name === "plist") root = open();
+  return value(root);
+}
+
 function dataDir(id: BrowserId, env: ImportEnv): string | undefined {
   const browser = browsers[id];
   if (env.platform === "win32") {
@@ -297,7 +393,7 @@ function handlerName(env: ImportEnv): string | undefined {
       "Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist",
     );
     const parsed = record(
-      JSON.parse(exec("plutil", ["-convert", "json", "-o", "-", plist])),
+      parsePlistXml(exec("plutil", ["-convert", "xml1", "-o", "-", plist])),
     );
     const entries = Array.isArray(parsed.LSHandlers) ? parsed.LSHandlers : [];
     for (const scheme of ["https", "http"]) {
@@ -465,7 +561,11 @@ async function withCopy<T>(
       if (existsSync(file + suffix)) await copyFile(file + suffix, copy + suffix);
     return read(copy);
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    // A scanner may still hold the fresh copy (EBUSY on Windows); a failed
+    // cleanup must not turn a successful read into an error.
+    await rm(temporary, { recursive: true, force: true, maxRetries: 3 }).catch(
+      () => undefined,
+    );
   }
 }
 
@@ -526,12 +626,12 @@ export async function importFrom(
   if (browser.engine === "safari") {
     if (options.bookmarks)
       await attempt("bookmarks", async () => {
-        const json = await withCopy(join(dir, "Bookmarks.plist"), (copy) =>
-          JSON.parse(
-            (env.exec ?? run)("plutil", ["-convert", "json", "-o", "-", copy]),
+        const plist = await withCopy(join(dir, "Bookmarks.plist"), (copy) =>
+          parsePlistXml(
+            (env.exec ?? run)("plutil", ["-convert", "xml1", "-o", "-", copy]),
           ),
         );
-        result.bookmarks = parseSafariBookmarks(json);
+        result.bookmarks = parseSafariBookmarks(plist);
       });
     if (options.history)
       await attempt("history", async () => {

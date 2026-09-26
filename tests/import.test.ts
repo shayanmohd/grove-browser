@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -8,11 +9,12 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   availableBrowsers,
   chromiumTime,
@@ -20,11 +22,18 @@ import {
   firefoxTime,
   importFrom,
   parseChromiumBookmarks,
+  parsePlistXml,
   parseSafariBookmarks,
   safariTime,
   type BrowserId,
   type ImportEnv,
 } from "../electron/import";
+
+// One test makes the removal of the temporary copy fail.
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, rm: vi.fn(actual.rm) };
+});
 
 const fixtures = fileURLToPath(new URL("./fixtures/import/", import.meta.url));
 const directories: string[] = [];
@@ -60,13 +69,14 @@ const mac = (home: string, exec: ImportEnv["exec"] = silent): ImportEnv => ({
 const support = (home: string) => join(home, "Library", "Application Support");
 const both = { bookmarks: true, history: true };
 
+const plistDict = (entries: Record<string, unknown>) =>
+  `<dict>${Object.entries(entries)
+    .map(([key, value]) => `<key>${key}</key><string>${value}</string>`)
+    .join("")}</dict>`;
 const launchServices = (handler?: Record<string, unknown>) =>
-  JSON.stringify({
-    LSHandlers: [
-      { LSHandlerContentType: "public.html", LSHandlerRoleAll: "com.apple.safari" },
-      ...(handler ? [handler] : []),
-    ],
-  });
+  `<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>LSHandlers</key><array>${plistDict(
+    { LSHandlerContentType: "public.html", LSHandlerRoleAll: "com.apple.safari" },
+  )}${handler ? plistDict(handler) : ""}</array></dict></plist>\n`;
 const registry = (progId: string) =>
   `\r\nHKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice\r\n    ProgId    REG_SZ    ${progId}\r\n\r\n`;
 
@@ -212,6 +222,95 @@ describe("bookmark parsers", () => {
   });
 });
 
+describe("plist reader", () => {
+  it("reads every value type plutil writes as XML", () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>Blob</key>
+\t<data>
+\taGVs
+\tbG8=
+\t</data>
+\t<key>Count</key>
+\t<integer>-3</integer>
+\t<key>Empty</key>
+\t<string></string>
+\t<key>List</key>
+\t<array>
+\t\t<string>x</string>
+\t\t<real>1.5</real>
+\t\t<true/>
+\t\t<false/>
+\t\t<array/>
+\t\t<dict/>
+\t</array>
+\t<key>Seen</key>
+\t<date>2025-01-01T00:00:00Z</date>
+\t<key>Tom &amp; Jerry</key>
+\t<string>A &amp; B &lt;c&gt; &quot;d&quot; &apos;e&apos; &#65;&#x42;</string>
+</dict>
+</plist>
+`;
+    expect(parsePlistXml(xml)).toEqual({
+      Blob: "aGVsbG8=",
+      Count: -3,
+      Empty: "",
+      List: ["x", 1.5, true, false, [], {}],
+      Seen: "2025-01-01T00:00:00.000Z",
+      "Tom & Jerry": "A & B <c> \"d\" 'e' AB",
+    });
+    expect(parsePlistXml("<plist version=\"1.0\"><string>alone</string></plist>")).toBe("alone");
+  });
+  it("rejects text that is not a plist", () => {
+    expect(() => parsePlistXml("not a plist")).toThrow();
+    expect(() => parsePlistXml("<plist version=\"1.0\"><dict><key>a</key></dict></plist>")).toThrow();
+    expect(() => parsePlistXml("<plist version=\"1.0\"><dict><string>a</string></dict></plist>")).toThrow();
+    expect(() => parsePlistXml("<plist version=\"1.0\"><array><string>open</plist>")).toThrow();
+    expect(() => parsePlistXml("<plist version=\"1.0\"><array><string>a</string>")).toThrow();
+    expect(() => parsePlistXml("<plist version=\"1.0\"><dict><key>a</key><thing/></dict></plist>")).toThrow();
+  });
+  it.skipIf(process.platform !== "darwin")("reads what plutil writes for a binary plist", () => {
+    const binary = join(folder(), "Bookmarks.plist");
+    execFileSync("plutil", ["-convert", "binary1", "-o", binary, join(fixtures, "safari/Bookmarks.plist")]);
+    const xml = execFileSync("plutil", ["-convert", "xml1", "-o", "-", binary], { encoding: "utf8" });
+    expect(parsePlistXml(xml)).toEqual(parsePlistXml(readFileSync(join(fixtures, "safari/Bookmarks.plist"), "utf8")));
+    // The dates in the Reading List are what made the JSON conversion fail.
+    expect(() => execFileSync("plutil", ["-convert", "json", "-o", "-", binary], { stdio: "pipe" })).toThrow();
+  });
+  it("reads Safari's bookmark file with its Reading List dates", () => {
+    const plist = parsePlistXml(readFileSync(join(fixtures, "safari/Bookmarks.plist"), "utf8")) as {
+      Children: { Title: string; Children?: Record<string, unknown>[] }[];
+      Sync: Record<string, unknown>;
+      WebBookmarkFileVersion: number;
+    };
+    expect(plist.WebBookmarkFileVersion).toBe(1);
+    expect(plist.Sync).toEqual({ CloudKitMigrationState: 2, ServerData: "AAECAwQF" });
+    const readingList = plist.Children.find((list) => list.Title === "com.apple.ReadingList");
+    expect(readingList?.Children?.[0].ReadingList).toEqual({
+      DateAdded: "2025-01-01T00:00:00.000Z",
+      DateLastViewed: "2025-01-02T10:30:00.000Z",
+      PreviewText: "The first lines of the article.",
+    });
+    expect(readingList?.Children?.[0].ReadingListNonSync).toEqual({
+      AddedLocally: true,
+      FetchResult: 1,
+      neverFetchMetadata: false,
+      siteName: "Example",
+    });
+    expect(parseSafariBookmarks(plist)).toEqual([
+      { title: "Kamapathy", url: "https://kamapathy.app/" },
+      { title: "Nested", url: "https://example.com/nested" },
+      { title: "Deeper", url: "https://example.com/deeper" },
+      { title: 'Fish & Chips <fresh> "daily"', url: "https://example.com/search?q=fish&chips" },
+      { title: "https://example.com/untitled", url: "https://example.com/untitled" },
+      { title: "Menu page", url: "https://example.com/menu" },
+      { title: "Saved article", url: "https://example.com/article" },
+    ]);
+  });
+});
+
 describe("browser detection", () => {
   it("lists installed browsers and their profiles on macOS", () => {
     const home = folder();
@@ -339,7 +438,7 @@ describe("default browser", () => {
       "plutil",
       [
         "-convert",
-        "json",
+        "xml1",
         "-o",
         "-",
         join(home, "Library", "Preferences", "com.apple.LaunchServices", "com.apple.launchservices.secure.plist"),
@@ -350,7 +449,7 @@ describe("default browser", () => {
     expect(lookup(launchServices({ LSHandlerURLScheme: "https", LSHandlerRoleAll: "company.thebrowser.Browser" }))).toBe("arc");
     expect(lookup(launchServices({ LSHandlerURLScheme: "https", LSHandlerRoleAll: "com.kagi.kagimacos" }))).toBeUndefined();
     expect(lookup(launchServices())).toBe("safari");
-    expect(lookup("not json")).toBeUndefined();
+    expect(lookup("not a plist")).toBeUndefined();
     expect(defaultBrowser(mac(home, failing))).toBeUndefined();
   });
   it("reads the UserChoice ProgId on Windows", () => {
@@ -456,6 +555,21 @@ describe("Chromium import", () => {
     });
     expect(result.history[2].title).toBe("https://example.com/docs");
     expect(temporary()).toBe(before);
+  });
+  it("keeps what it read when the temporary copy cannot be removed", async () => {
+    const home = folder();
+    const profile = chromeProfile(home);
+    chromiumHistory(join(profile, "History"), rows).close();
+    const busy = Object.assign(new Error("resource busy or locked"), { code: "EBUSY" });
+    vi.mocked(rm).mockRejectedValueOnce(busy);
+
+    const result = await importFrom("chrome", undefined, { bookmarks: false, history: true }, mac(home));
+
+    expect(result.warnings).toEqual([]);
+    expect(result.history).toHaveLength(3);
+    const [copy, options] = vi.mocked(rm).mock.lastCall ?? [];
+    expect(options).toEqual({ recursive: true, force: true, maxRetries: 3 });
+    rmSync(copy as string, { recursive: true, force: true });
   });
   it("keeps the 1000 most recent visits", async () => {
     const home = folder();
@@ -603,17 +717,18 @@ describe("Safari import", () => {
     const calls: [string, string[]][] = [];
     const env = mac(home, (command, args) => {
       calls.push([command, args]);
-      return readFileSync(join(fixtures, "safari/Bookmarks.json"), "utf8");
+      return readFileSync(join(fixtures, "safari/Bookmarks.plist"), "utf8");
     });
 
     const result = await importFrom("safari", undefined, both, env);
 
     expect(result.warnings).toEqual([]);
-    expect(result.bookmarks).toHaveLength(5);
+    expect(result.bookmarks).toHaveLength(7);
     expect(result.bookmarks[0]).toEqual({ title: "Kamapathy", url: "https://kamapathy.app/" });
+    expect(result.bookmarks[6]).toEqual({ title: "Saved article", url: "https://example.com/article" });
     expect(calls).toHaveLength(1);
     expect(calls[0][0]).toBe("plutil");
-    expect(calls[0][1].slice(0, 4)).toEqual(["-convert", "json", "-o", "-"]);
+    expect(calls[0][1].slice(0, 4)).toEqual(["-convert", "xml1", "-o", "-"]);
     expect(calls[0][1][4]).toMatch(/Bookmarks\.plist$/);
     expect(calls[0][1][4]).not.toBe(join(home, "Library", "Safari", "Bookmarks.plist"));
     expect(result.history).toEqual([
@@ -630,11 +745,11 @@ describe("Safari import", () => {
     "explains the Full Disk Access requirement instead of failing",
     async () => {
       const home = safariHome();
-      const env = mac(home, () => readFileSync(join(fixtures, "safari/Bookmarks.json"), "utf8"));
+      const env = mac(home, () => readFileSync(join(fixtures, "safari/Bookmarks.plist"), "utf8"));
       chmodSync(join(home, "Library", "Safari", "History.db"), 0o000);
       const partial = await importFrom("safari", undefined, both, env);
       expect(partial.warnings).toEqual([blocked]);
-      expect(partial.bookmarks).toHaveLength(5);
+      expect(partial.bookmarks).toHaveLength(7);
       expect(partial.history).toEqual([]);
 
       chmodSync(join(home, "Library", "Safari", "Bookmarks.plist"), 0o000);
