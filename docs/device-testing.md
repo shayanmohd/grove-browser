@@ -6,7 +6,7 @@ For the easiest installation, open [Kamapathy Releases](https://github.com/shaya
 
 ## Windows
 
-Install Git and Node.js 22.12 or newer. In PowerShell:
+Install Git and Node.js 22.13 or newer. In PowerShell:
 
 ```powershell
 git clone https://github.com/shayanmohd/kamapathy.git
@@ -31,7 +31,7 @@ Remove-Item Env:KAMAPATHY_TEST_PUBLIC
 
 ## Linux
 
-On Ubuntu 22.04, install the desktop dependencies and use Node.js 22.12 or newer:
+On Ubuntu 22.04, install the desktop dependencies and use Node.js 22.13 or newer:
 
 ```sh
 sudo apt-get update

@@ -305,7 +305,7 @@ npm ci
 npm run dev
 ```
 
-You need Node.js 22.12 or newer. The first run prepares a desktop runtime with Kamapathy's own name and icon, and later runs reuse it.
+You need Node.js 22.13 or newer. The first run prepares a desktop runtime with Kamapathy's own name and icon, and later runs reuse it.
 
 <details>
 <summary><strong>Test and package</strong></summary>

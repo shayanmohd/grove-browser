@@ -4,7 +4,7 @@ Kamapathy is a small desktop browser with a shared React interface and an Electr
 
 ## Get started
 
-1. Install Node.js 22.12 or newer.
+1. Install Node.js 22.13 or newer.
 2. Run `npm ci` in the repository.
 3. Run `npm run dev` for the desktop application or `npm run dev:web` for interface work.
 4. Read the [architecture](docs/architecture.md) before changing IPC, sessions, persistence, or automation.
