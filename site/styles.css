@@ -1269,6 +1269,12 @@ h2 {
 .step .code-line {
   margin-top: 14px;
 }
+.step .code-line code {
+  padding: 6px 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .step .hint {
   margin-top: 12px;
 }
