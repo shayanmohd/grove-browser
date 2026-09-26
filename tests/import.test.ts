@@ -82,7 +82,10 @@ function chromiumHistory(
   const insert = db.prepare(
     "INSERT INTO urls (url, title, visit_count, last_visit_time, hidden) VALUES (?, ?, ?, ?, ?)",
   );
+  // One transaction: a thousand separate commits take seconds on Windows.
+  db.exec("BEGIN");
   for (const row of rows) insert.run(...row);
+  db.exec("COMMIT");
   return db;
 }
 
