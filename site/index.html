@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Kamapathy · A calm browser you share with your agents</title>
-  <meta name="description" content="Kamapathy is a free, open source desktop browser for macOS, Windows and Linux. Keep spaces separate, let agents work in plain sight, and take over with one click." />
+  <meta name="description" content="Kamapathy is a free, open source desktop browser for macOS, Windows and Linux. Sign in once, let agents use your sign-ins in spaces of their own, take over any time, and isolate any space when you want it kept apart." />
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#161616" media="(prefers-color-scheme: dark)" />
   <link rel="canonical" href="https://kamapathy.app/" />
@@ -13,7 +13,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://kamapathy.app/" />
   <meta property="og:title" content="Kamapathy" />
-  <meta property="og:description" content="A calm desktop browser you share with your agents. Free and open source for macOS, Windows and Linux." />
+  <meta property="og:description" content="A calm desktop browser you share with your agents. Sign in once, let agents work in spaces of their own with your sign-ins, and take over any time. Free and open source for macOS, Windows and Linux." />
   <meta property="og:image" content="https://kamapathy.app/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -44,6 +44,9 @@
 <symbol id="i-columns" viewBox="0 0 256 256"><path d="M104,32H64A16,16,0,0,0,48,48V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,104,32Zm0,176H64V48h40ZM192,32H152a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,192,32Zm0,176H152V48h40Z"/></symbol>
 <symbol id="i-command" viewBox="0 0 256 256"><path d="M180,144H160V112h20a36,36,0,1,0-36-36V96H112V76a36,36,0,1,0-36,36H96v32H76a36,36,0,1,0,36,36V160h32v20a36,36,0,1,0,36-36ZM160,76a20,20,0,1,1,20,20H160ZM56,76a20,20,0,0,1,40,0V96H76A20,20,0,0,1,56,76ZM96,180a20,20,0,1,1-20-20H96Zm16-68h32v32H112Zm68,88a20,20,0,0,1-20-20V160h20a20,20,0,0,1,0,40Z"/></symbol>
 <symbol id="i-lock" viewBox="0 0 256 256"><path d="M208,80H176V56a48,48,0,0,0-96,0V80H48A16,16,0,0,0,32,96V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V96A16,16,0,0,0,208,80ZM96,56a32,32,0,0,1,64,0V80H96ZM208,208H48V96H208V208Zm-68-56a12,12,0,1,1-12-12A12,12,0,0,1,140,152Z"/></symbol>
+<symbol id="i-key" viewBox="0 0 256 256"><path d="M216.57,39.43A80,80,0,0,0,83.91,120.78L28.69,176A15.86,15.86,0,0,0,24,187.31V216a16,16,0,0,0,16,16H72a8,8,0,0,0,8-8V208H96a8,8,0,0,0,8-8V184h16a8,8,0,0,0,5.66-2.34l9.56-9.57A79.73,79.73,0,0,0,160,176h.1A80,80,0,0,0,216.57,39.43ZM224,98.1c-1.09,34.09-29.75,61.86-63.89,61.9H160a63.7,63.7,0,0,1-23.65-4.51,8,8,0,0,0-8.84,1.68L116.69,168H96a8,8,0,0,0-8,8v16H72a8,8,0,0,0-8,8v16H40V187.31l58.83-58.82a8,8,0,0,0,1.68-8.84A63.72,63.72,0,0,1,96,96c0-34.16,27.77-62.85,61.9-64A64,64,0,0,1,224,98.1ZM192,76a12,12,0,1,1-12-12A12,12,0,0,1,192,76Z"/></symbol>
+<symbol id="i-eye" viewBox="0 0 256 256"><path d="M247.31,124.76c-.35-.79-8.82-19.58-27.65-38.41C194.57,61.26,162.88,48,128,48S61.43,61.26,36.34,86.35C17.51,105.18,9,124,8.69,124.76a8,8,0,0,0,0,6.5c.35.79,8.82,19.57,27.65,38.4C61.43,194.74,93.12,208,128,208s66.57-13.26,91.66-38.34c18.83-18.83,27.3-37.61,27.65-38.4A8,8,0,0,0,247.31,124.76ZM128,192c-30.78,0-57.67-11.19-79.93-33.25A133.47,133.47,0,0,1,25,128,133.33,133.33,0,0,1,48.07,97.25C70.33,75.19,97.22,64,128,64s57.67,11.19,79.93,33.25A133.46,133.46,0,0,1,231.05,128C223.84,141.46,192.43,192,128,192Zm0-112a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Z"/></symbol>
+<symbol id="i-sign-in" viewBox="0 0 256 256"><path d="M141.66,133.66l-40,40a8,8,0,0,1-11.32-11.32L116.69,136H24a8,8,0,0,1,0-16h92.69L90.34,93.66a8,8,0,0,1,11.32-11.32l40,40A8,8,0,0,1,141.66,133.66ZM192,32H136a8,8,0,0,0,0,16h56V208H136a8,8,0,0,0,0,16h56a16,16,0,0,0,16-16V48A16,16,0,0,0,192,32Z"/></symbol>
 <symbol id="i-download-simple" viewBox="0 0 256 256"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"/></symbol>
 <symbol id="i-github-logo" viewBox="0 0 256 256"><path d="M208.31,75.68A59.78,59.78,0,0,0,202.93,28,8,8,0,0,0,196,24a59.75,59.75,0,0,0-48,24H124A59.75,59.75,0,0,0,76,24a8,8,0,0,0-6.93,4,59.78,59.78,0,0,0-5.38,47.68A58.14,58.14,0,0,0,56,104v8a56.06,56.06,0,0,0,48.44,55.47A39.8,39.8,0,0,0,96,192v8H72a24,24,0,0,1-24-24A40,40,0,0,0,8,136a8,8,0,0,0,0,16,24,24,0,0,1,24,24,40,40,0,0,0,40,40H96v16a8,8,0,0,0,16,0V192a24,24,0,0,1,48,0v40a8,8,0,0,0,16,0V192a39.8,39.8,0,0,0-8.44-24.53A56.06,56.06,0,0,0,216,112v-8A58.14,58.14,0,0,0,208.31,75.68ZM200,112a40,40,0,0,1-40,40H112a40,40,0,0,1-40-40v-8a41.74,41.74,0,0,1,6.9-22.48A8,8,0,0,0,80,73.83a43.81,43.81,0,0,1,.79-33.58,43.88,43.88,0,0,1,32.32,20.06A8,8,0,0,0,119.82,64h32.35a8,8,0,0,0,6.74-3.69,43.87,43.87,0,0,1,32.32-20.06A43.81,43.81,0,0,1,192,73.83a8.09,8.09,0,0,0,1,7.65A41.72,41.72,0,0,1,200,104Z"/></symbol>
 <symbol id="i-moon" viewBox="0 0 256 256"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
@@ -63,25 +66,28 @@
 </svg>
 
 <header class="nav">
-  <a class="brand" href="/" aria-label="Kamapathy home">
-    <img src="/favicon.svg" alt="" width="26" height="26" />
-    <span>Kamapathy</span>
-  </a>
-  <nav aria-label="Sections">
-    <a href="#features">Features</a>
-    <a href="#agents">Agents</a>
-    <a href="#download">Download</a>
-    <a href="#faq">FAQ</a>
-  </nav>
-  <div class="nav-end">
-    <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
-      <svg class="when-light"><use href="#i-moon" /></svg>
-      <svg class="when-dark"><use href="#i-sun" /></svg>
-    </button>
-    <a class="icon-button" href="https://github.com/shayanmohd/kamapathy" aria-label="Kamapathy on GitHub">
-      <svg><use href="#i-github-logo" /></svg>
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="Kamapathy home">
+      <img src="/favicon.svg" alt="" width="26" height="26" />
+      <span>Kamapathy</span>
     </a>
-    <a class="button small" href="#download">Download</a>
+    <nav aria-label="Sections">
+      <a href="#features">Features</a>
+      <a href="#agents">Agents</a>
+      <a href="#compare">Compare</a>
+      <a href="#download">Download</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="nav-end">
+      <button class="icon-button" id="theme-toggle" type="button" aria-label="Switch to dark theme">
+        <svg class="when-light"><use href="#i-moon" /></svg>
+        <svg class="when-dark"><use href="#i-sun" /></svg>
+      </button>
+      <a class="icon-button" href="https://github.com/shayanmohd/kamapathy" aria-label="Kamapathy on GitHub">
+        <svg><use href="#i-github-logo" /></svg>
+      </a>
+      <a class="button small" href="#download">Download</a>
+    </div>
   </div>
 </header>
 
@@ -89,7 +95,7 @@
   <section class="hero">
     <p class="pill">Free and open source · macOS, Windows and Linux</p>
     <h1>A calm browser you share with your agents.</h1>
-    <p class="lede">Kamapathy keeps your tabs tidy, your spaces separate, and every agent in plain sight. Watch it work, take over with one click, and hand it back when you're ready.</p>
+    <p class="lede">Sign in once. Every agent gets a space of its own, with your sign-ins already there, and works where you can see it. Take over any time, and isolate any space you'd rather keep apart.</p>
 
     <div class="cta" data-download>
       <a class="button large" data-primary href="https://github.com/shayanmohd/kamapathy/releases/latest">
@@ -101,6 +107,7 @@
         <span data-alternate></span>
         <a href="#download">Other platforms</a>
       </p>
+      <p class="cta-agents">Works with Claude Code, Codex, Cursor and any agent that can run a command.</p>
     </div>
 
     <div class="demo" id="demo">
@@ -161,28 +168,28 @@
     <div class="features">
       <article class="feature">
         <svg><use href="#i-squares-four" /></svg>
-        <h3>Spaces that stay apart</h3>
-        <p>Work, personal and side projects each keep their own cookies and sign-ins. One shortcut lays every space out side by side.</p>
+        <h3>Spaces that share, or keep apart</h3>
+        <p>Work, personal, side projects and agents each get a space with its own tabs. One shortcut lays every space out side by side.</p>
       </article>
       <article class="feature">
-        <svg><use href="#i-magnifying-glass" /></svg>
-        <h3>Tabs across the top</h3>
-        <p>One strip for the space you're in, with pinned pages and tab search for the days when it fills up.</p>
+        <svg><use href="#i-robot" /></svg>
+        <h3>Agents in plain sight</h3>
+        <p>A green ring and a small bar show when an agent is working. Take over pauses it, Let agent continue hands it back.</p>
       </article>
       <article class="feature">
-        <svg><use href="#i-columns" /></svg>
-        <h3>Split view</h3>
-        <p>Two live pages in one window. The address bar and controls follow whichever side you click.</p>
+        <svg><use href="#i-key" /></svg>
+        <h3>Your sign-ins, on purpose</h3>
+        <p>Sign-ins are shared across spaces by default, so agents can act for you. Give any space Separate sign-ins, or turn on Isolate agent spaces in Settings.</p>
       </article>
       <article class="feature">
-        <svg><use href="#i-command" /></svg>
-        <h3>Command menu</h3>
-        <p>Press <kbd data-mod>⌘</kbd><kbd>K</kbd> to jump to any open tab or run any browser action without reaching for the mouse.</p>
+        <svg><use href="#i-sign-in" /></svg>
+        <h3>Bring your browser with you</h3>
+        <p>Import bookmarks and history from Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox or Safari, then sign in once to your top sites.</p>
       </article>
       <article class="feature">
-        <svg><use href="#i-bookmark-simple" /></svg>
-        <h3>A library at hand</h3>
-        <p>Bookmarks, history and downloads open as quick dialogs over the page, then get out of the way.</p>
+        <svg><use href="#i-eye" /></svg>
+        <h3>Sees the whole page</h3>
+        <p>Agent snapshots read open shadow roots and same-origin frames, and list frames from other origins so an agent knows what it cannot reach.</p>
       </article>
       <article class="feature">
         <svg><use href="#i-shield-check" /></svg>
@@ -192,27 +199,160 @@
     </div>
   </section>
 
+  <section class="section" id="setup">
+    <div class="section-head">
+      <p class="eyebrow">Get started</p>
+      <h2>Set up in a minute</h2>
+      <p>Three steps from download to an agent that browses for you.</p>
+    </div>
+    <ol class="steps">
+      <li class="step">
+        <span class="step-number" aria-hidden="true">1</span>
+        <div>
+          <h3>Download and open</h3>
+          <p>Get the build for your computer. The first launch offers to import your bookmarks and history, then helps you sign in once.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-number" aria-hidden="true">2</span>
+        <div>
+          <h3>Add the skill</h3>
+          <p>One command teaches your agent how to use Kamapathy.</p>
+          <div class="code-line"><code>npx skills add shayanmohd/kamapathy</code><button type="button" class="copy" data-copy aria-label="Copy command"><svg><use href="#i-copy" /></svg></button></div>
+          <p class="hint">Or run <code>npm run skill:install</code> from a checkout. Every release also carries the skill as a ZIP.</p>
+        </div>
+      </li>
+      <li class="step">
+        <span class="step-number" aria-hidden="true">3</span>
+        <div>
+          <h3>Ask your agent</h3>
+          <p>Say what you need. The agent connects on its own, starts Kamapathy if it isn't running, and hands the space to you when it needs you.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
   <section class="section agents" id="agents">
     <div class="agents-copy">
       <p class="eyebrow">Agents</p>
       <h2>Your agent drives. You keep the keys.</h2>
-      <p>Kamapathy gives coding and research agents a real browser without handing over yours. Each agent works in its own space, and you can see every step it takes.</p>
+      <p>Kamapathy gives coding and research agents a real browser: yours, with your sign-ins, in spaces you can watch. Every step is visible, and the keys stay with you.</p>
       <ul class="points">
-        <li><svg><use href="#i-robot" /></svg><div><b>A space of its own.</b> Agent spaces have separate cookies and never see your tabs.</div></li>
-        <li><svg><use href="#i-hand-palm" /></svg><div><b>Take over anytime.</b> One click pauses the agent. Let it continue when you're done.</div></li>
-        <li><svg><use href="#i-lock" /></svg><div><b>You sign in, not the agent.</b> It hands the space to you for passwords and codes, and password fields read as hidden in its snapshots.</div></li>
-        <li><svg><use href="#i-terminal" /></svg><div><b>Bring any agent.</b> A small Node.js client and a ready-made skill work with Claude Code, Codex and anything else that can run a command.</div></li>
-        <li><svg><use href="#i-shield-check" /></svg><div><b>Local and switchable.</b> Agents connect over a private channel on your computer. One switch in Settings turns them all off.</div></li>
+        <li><svg><use href="#i-robot" /></svg><div><b>A space of its own.</b> Every agent works in a space you can watch, and never sees your tabs.</div></li>
+        <li><svg><use href="#i-key" /></svg><div><b>Your sign-ins, unless you isolate.</b> Agents use the sites you're signed in to, so they can act for you. Isolate one space, or all of them in Settings.</div></li>
+        <li><svg><use href="#i-hand-palm" /></svg><div><b>Take over anytime.</b> One click pauses the agent. Let agent continue hands the space back, and an agent can ask for it back with resume.</div></li>
+        <li><svg><use href="#i-terminal" /></svg><div><b>One script, or one command at a time.</b> <code>node kamapathy.mjs run book.mjs</code> carries a whole task. The CLI does one step at a time when that's simpler.</div></li>
+        <li><svg><use href="#i-eye" /></svg><div><b>Sees inside frames and shadow roots.</b> Snapshots read open shadow roots and same-origin frames. Frames from other origins are listed, so the agent asks you instead of guessing.</div></li>
+        <li><svg><use href="#i-shield-check" /></svg><div><b>Local and switchable.</b> Agents connect over a private socket on your computer. One switch in Settings turns them all off.</div></li>
       </ul>
     </div>
     <div class="terminal" data-terminal>
       <div class="terminal-bar">
         <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>agent session</span>
+        <span class="terminal-title">book.mjs</span>
         <button type="button" class="terminal-replay" data-replay aria-label="Replay the session"><svg><use href="#i-arrow-clockwise" /></svg></button>
       </div>
-      <pre class="terminal-body" data-terminal-body aria-label="An agent using the Kamapathy client"></pre>
+      <pre class="terminal-script" aria-label="The book.mjs script"><span class="kw">const</span> dinner = <span class="kw">await</span> <span class="fn">createSpace</span>(<span class="str">"Dinner booking"</span>);
+console.<span class="fn">log</span>(<span class="str">`space ${dinner.id} ${dinner.signIns}`</span>);
+<span class="kw">const</span> page = <span class="kw">await</span> dinner.<span class="fn">open</span>(<span class="str">"https://table.example/reserve"</span>);
+<span class="kw">const</span> view = <span class="kw">await</span> page.<span class="fn">snapshot</span>();
+console.<span class="fn">log</span>(<span class="kw">await</span> page.<span class="fn">text</span>({ maxChars: <span class="num">0</span> }));
+<span class="kw">const</span> ref = (label) =&gt;
+  view.interactables.<span class="fn">find</span>((c) =&gt; c.label === label).ref;
+<span class="kw">await</span> page.<span class="fn">batch</span>([
+  { type: <span class="str">"fill"</span>, ref: <span class="fn">ref</span>(<span class="str">"Name"</span>), value: <span class="str">"Sam Rivera"</span> },
+  { type: <span class="str">"fill"</span>, ref: <span class="fn">ref</span>(<span class="str">"Party size"</span>), value: <span class="str">"2"</span> },
+  { type: <span class="str">"fill"</span>, ref: <span class="fn">ref</span>(<span class="str">"Time"</span>), value: <span class="str">"19:30"</span> },
+  { type: <span class="str">"click"</span>, ref: <span class="fn">ref</span>(<span class="str">"Reserve"</span>) },
+]);
+console.<span class="fn">log</span>(<span class="str">"batch ok"</span>);
+<span class="kw">if</span> ((<span class="kw">await</span> page.<span class="fn">text</span>()).<span class="fn">includes</span>(<span class="str">"Sign in"</span>)) {
+  <span class="kw">await</span> dinner.<span class="fn">handoff</span>();
+  console.<span class="fn">log</span>(<span class="str">`Sign in needed. Space ${dinner.id} is yours.`</span>);
+}</pre>
+      <pre class="terminal-body" data-terminal-body aria-label="The script being run with the Kamapathy client"></pre>
     </div>
+  </section>
+
+  <section class="section" id="compare">
+    <div class="section-head">
+      <p class="eyebrow">How it compares</p>
+      <h2>Where Kamapathy fits</h2>
+      <p>Agents usually browse through one of two kinds of tool. Here is how a browser built for both of you differs.</p>
+    </div>
+    <div class="compare-scroll">
+      <table class="compare">
+        <thead>
+          <tr>
+            <th scope="col"><span class="visually-hidden">What you get</span></th>
+            <th scope="col" class="us">Kamapathy</th>
+            <th scope="col">Automation libraries</th>
+            <th scope="col">AI browsers with a built in assistant</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Your own daily browser</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">No</span></td>
+            <td><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+          </tr>
+          <tr>
+            <th scope="row">Any agent you already use</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Several agents at once, each in its own space</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+            <td><span class="no">No</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Uses your sign-ins, with a switch to isolate</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Take over and hand back any time</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">No</span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Sees shadow roots and same-origin frames</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">Free and open source</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">macOS, Windows and Linux</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+          <tr>
+            <th scope="row">No account, no telemetry</th>
+            <td class="us"><span class="yes"><svg><use href="#i-check" /></svg><span class="visually-hidden">Yes</span></span></td>
+            <td><span class="no">Some</span></td>
+            <td><span class="no">Some</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <ul class="compare-notes">
+      <li><b>Automation libraries</b> are tools you drive from code, such as Playwright based tools. They launch a browser of their own, so your daily browsing and sign-ins stay elsewhere unless you wire them in.</li>
+      <li><b>AI browsers with a built in assistant</b> ship one agent as part of the product. Bringing your own agents, or several at once, depends on what each one allows.</li>
+      <li>Every row describes Kamapathy as it is today. Not there yet: browser extensions, a password manager, sync, an ad blocker, DRM playback, signed installers, automatic updates and an independent security audit.</li>
+    </ul>
   </section>
 
   <section class="section" id="tour">
@@ -316,15 +456,23 @@
       </details>
       <details>
         <summary>Does it come with an AI model?</summary>
-        <p>No. Kamapathy is the browser your agent uses. Install the skill for Claude Code or Codex, or call the Node.js client from any agent that can run a command. There's no subscription and nothing to sign up for.</p>
+        <p>No. Kamapathy is the browser your agent uses. Add the skill with <code>npx skills add shayanmohd/kamapathy</code>, or call the Node.js client from any agent that can run a command. There's no subscription and nothing to sign up for.</p>
       </details>
       <details>
         <summary>Can an agent see my own tabs or accounts?</summary>
-        <p>No. Agents only see the spaces they create, and those spaces have their own cookies and storage. When a site needs you to sign in, the agent hands the space to you and waits. You can take over or stop every agent at any time, and turning off agent access in Settings refuses all of them.</p>
+        <p>Agents never see your tabs. They do use your sign-ins by default, in spaces of their own, so they can act for you on the sites you're already signed in to. Give a space <b>Separate sign-ins</b> to keep it apart, or turn on <b>Isolate agent spaces</b> in Settings so every new agent space starts with a temporary session. Turning <b>Agent access</b> off refuses all agents at once.</p>
+      </details>
+      <details>
+        <summary>Can I import from Chrome?</summary>
+        <p>Yes. The first launch offers to bring your bookmarks and history over from Chrome, Chromium, Edge, Brave, Arc, Vivaldi, Opera, Firefox or Safari, with your default browser preselected and a profile picker when there is more than one. You can do it later from Settings, under Browsing. Kamapathy reads the other browser's files and never changes them.</p>
+      </details>
+      <details>
+        <summary>What can an agent not do?</summary>
+        <p>Frames from another origin, such as a payment form or an embedded map, are listed in a snapshot but cannot be read or clicked. Canvas editors and JavaScript dialogs are out of reach too. In each case the agent hands the space to you. Agent spaces also refuse downloads and permission prompts.</p>
       </details>
       <details>
         <summary>Will my sites work?</summary>
-        <p>Kamapathy uses Chromium, the engine behind Chrome and Edge, so pages render and behave the same way. Browser extensions, sync and a password manager aren't part of this preview yet.</p>
+        <p>Kamapathy uses Chromium, the engine behind Chrome and Edge, so pages render and behave the same way. Browser extensions, sync, a password manager, an ad blocker and DRM playback aren't part of this preview yet.</p>
       </details>
       <details>
         <summary>Why does my computer warn me when I open it?</summary>
@@ -339,17 +487,20 @@
 </main>
 
 <footer class="footer">
-  <div class="brand">
-    <img src="/favicon.svg" alt="" width="22" height="22" />
-    <span>Kamapathy</span>
+  <div class="footer-inner">
+    <div class="brand">
+      <img src="/favicon.svg" alt="" width="22" height="22" />
+      <span>Kamapathy</span>
+    </div>
+    <nav aria-label="Project">
+      <a href="https://github.com/shayanmohd/kamapathy">Source</a>
+      <a href="https://github.com/shayanmohd/kamapathy/releases">Releases</a>
+      <a href="https://github.com/shayanmohd/kamapathy/blob/main/docs/automation.md">Agent guide</a>
+      <a href="https://github.com/shayanmohd/kamapathy/blob/main/docs/SECURITY.md">Security model</a>
+      <a href="https://github.com/shayanmohd/kamapathy/issues">Report an issue</a>
+    </nav>
+    <p>MIT licensed. Made by <a href="https://github.com/shayanmohd">@shayanmohd</a>.</p>
   </div>
-  <nav aria-label="Project">
-    <a href="https://github.com/shayanmohd/kamapathy">Source</a>
-    <a href="https://github.com/shayanmohd/kamapathy/releases">Releases</a>
-    <a href="https://github.com/shayanmohd/kamapathy/blob/main/docs/automation.md">Agent guide</a>
-    <a href="https://github.com/shayanmohd/kamapathy/issues">Report an issue</a>
-  </nav>
-  <p>MIT licensed. Made by <a href="https://github.com/shayanmohd">@shayanmohd</a>.</p>
 </footer>
 
 <dialog class="thanks" data-thanks aria-labelledby="thanks-title">

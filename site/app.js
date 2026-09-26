@@ -594,7 +594,7 @@ const steps = [
     agent.state = "needs-you";
     cursor.classList.remove("on");
     renderChrome();
-    say("Sign-in is yours, not the agent's. It hands the space to you and waits. Click Sign in on the page, then Let agent continue.");
+    say("Luca wants a sign-in the agent doesn't have, so it hands the space to you and waits. Click Sign in on the page, then Let agent continue.");
   },
   async (run) => {
     if (!bookingTab().signedIn) {
@@ -603,7 +603,7 @@ const steps = [
       agent.step = HANDOFF - 1;
       return;
     }
-    say("You're signed in. The agent picks up where it left off.");
+    say("You're signed in, and so is every space that shares your sign-ins. The agent picks up where it left off.");
     await moveTo('[data-field="confirm"]', run);
     await press(run);
     navigate("confirmed", "/luca/booked");
@@ -723,7 +723,7 @@ mock.addEventListener("click", (event) => {
       tabs: [{ title: "New tab", page: "newtab" }],
     });
     selectSpace(spaces.filter((item) => !item.agent).length - 1);
-    say("A fresh space with its own cookies and sign-ins.");
+    say("A fresh space. It shares your sign-ins, unless you give it separate ones.");
   } else if (data.menu) {
     closeLayer();
     const [kind, name] = data.menu.split(":");
@@ -739,7 +739,7 @@ mock.addEventListener("click", (event) => {
     say(
       agent?.state === "off"
         ? "Signed in."
-        : "Signed in. The agent never saw your password. Press Let agent continue.",
+        : "Signed in. The agent was paused while you typed, and password fields stay hidden in its snapshots. Press Let agent continue.",
     );
   } else if (data.action) {
     const action = data.action;
@@ -789,7 +789,7 @@ $(".try").addEventListener("click", (event) => {
   if (kind === "agent") startAgent();
   else if (kind === "spaces") {
     showSpaces();
-    say("Each space keeps its own tabs, cookies and sign-ins. Pick one, or open All spaces.");
+    say("Each space keeps its own tabs, and shares your sign-ins unless you say otherwise. Pick one, or open All spaces.");
   } else if (kind === "command") showPalette();
 });
 
@@ -798,48 +798,55 @@ render();
 // Terminal
 
 const terminal = $("[data-terminal-body]");
+// What book.mjs above prints when run, then a second script that takes the
+// space back once the person has signed in.
 const session = [
-  ["cmd", 'node kamapathy.mjs space create "Dinner booking"'],
-  ["out", 'space 8c1f2e04 "Dinner booking" agent'],
-  ["cmd", "node kamapathy.mjs open 8c1f2e04 https://table.example/luca/reserve"],
-  ["out", "tab 51a9d7c3 https://table.example/luca/reserve"],
-  ["cmd", "node kamapathy.mjs snapshot 51a9d7c3"],
-  ["out", "Reserve a table · Luca\nhttps://table.example/luca/reserve\n\nControls:\n@e1 textbox \"Name\"\n@e2 combobox \"Party size\"\n@e3 combobox \"Time\"\n@e4 button \"Reserve\""],
-  ["cmd", "node kamapathy.mjs batch 51a9d7c3 < booking.json"],
-  ["out", "1. fill ok\n2. select ok\n3. select ok\n4. click ok"],
-  ["cmd", "node kamapathy.mjs handoff 8c1f2e04"],
-  ["ok", "ok: human control, automation paused"],
-  ["note", "# The person signs in, then says: go ahead"],
-  ["cmd", "node kamapathy.mjs resume 8c1f2e04"],
-  ["ok", "ok: agent control resumed"],
-  ["cmd", 'node kamapathy.mjs click 51a9d7c3 "button.confirm"'],
-  ["ok", "ok"],
+  ["cmd", "node kamapathy.mjs run book.mjs"],
+  ["out", "space 8c1f2e04 shared"],
+  ["out", "Reserve a table · Luca\nhttps://table.example/reserve\n\nControls:\n@e1 textbox \"Name\"\n@e2 spinbutton \"Party size\"\n@e3 textbox \"Time\"\n@e4 button \"Reserve\""],
+  ["ok", "batch ok"],
+  ["note", "Sign in needed. Space 8c1f2e04 is yours."],
+  ["comment", "# You sign in, then say: go ahead"],
+  ["cmd", "node kamapathy.mjs run - <<'EOF'"],
+  ["cont", 'const dinner = await space("8c1f2e04");'],
+  ["cont", "await dinner.resume();"],
+  ["cont", "const [page] = await dinner.tabs();"],
+  ["cont", 'await page.click("button.confirm");'],
+  ["cont", "console.log(await page.text({ maxControls: 0 }));"],
+  ["cont", "EOF"],
+  ["out", "Booked · Luca\nhttps://table.example/booked\n\nYou're booked. Table for 2 at Luca, Friday 19:30."],
 ];
 let terminalRun = 0;
+terminal.addEventListener(
+  "scroll",
+  () => terminal.classList.toggle("scrolled", terminal.scrollTop > 4),
+  { passive: true },
+);
 async function playTerminal() {
   const run = ++terminalRun;
   terminal.innerHTML = "";
+  terminal.classList.remove("scrolled");
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   for (const [kind, text] of session) {
     if (run !== terminalRun) return;
     const line = document.createElement("div");
     terminal.append(line);
-    if (kind === "cmd") {
-      line.innerHTML = `<span class="prompt">$ </span><span class="cmd"></span><span class="caret"></span>`;
+    if (kind === "cmd" || kind === "cont") {
+      line.innerHTML = `<span class="prompt">${kind === "cmd" ? "$ " : "> "}</span><span class="cmd"></span><span class="caret"></span>`;
       const target = line.querySelector(".cmd");
       if (reduced) target.textContent = text;
       else
         for (const letter of text) {
           if (run !== terminalRun) return;
           target.textContent += letter;
-          await sleep(14 + Math.random() * 26);
+          await sleep(kind === "cont" ? 6 + Math.random() * 10 : 14 + Math.random() * 26);
         }
-      await sleep(reduced ? 0 : 280);
+      await sleep(reduced ? 0 : kind === "cont" ? 120 : 280);
       line.querySelector(".caret").remove();
     } else {
       line.className = kind;
       line.textContent = text;
-      await sleep(reduced ? 0 : kind === "note" ? 900 : 420);
+      await sleep(reduced ? 0 : kind === "comment" ? 900 : 420);
     }
     terminal.scrollTop = terminal.scrollHeight;
   }
@@ -862,8 +869,11 @@ $("[data-replay]").addEventListener("click", playTerminal);
 // Tour of real screenshots
 
 const tour = [
+  ["welcome", "First launch", "welcome", "The first launch brings over your bookmarks and history, then helps you sign in once. Every space and agent can use those sign-ins."],
+  ["import", "Import", "import", "Settings imports bookmarks and history from Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox or Safari, and never changes them."],
+  ["space-options", "Space options", "space-options", "Any space can keep Separate sign-ins, when you create it or later from the Spaces popover."],
   ["agents", "Agents", "agent-browsing", "An agent at work: a green ring around its page and a bar to take over or stop it."],
-  ["spaces", "Spaces", "spaces-grid", "All spaces side by side, each with its own sign-ins."],
+  ["spaces", "Spaces", "spaces-grid", "All spaces side by side, sharing your sign-ins unless you say otherwise."],
   ["newtab", "New tab", "new-tab", "A quiet new tab with a search box and your shortcuts."],
   ["split", "Split view", "split-view", "Two live pages in one window."],
   ["command", "Command menu", "command-palette", "Find any tab or action from the keyboard."],
