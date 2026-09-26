@@ -6,10 +6,22 @@ import type {
   KamapathyBridge,
 } from "../shared/types";
 
+// Electron wraps a rejection in "Error invoking remote method ..."; the
+// interface shows the message itself.
+async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
+  try {
+    return (await ipcRenderer.invoke(channel, ...args)) as T;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      message.replace(/^Error invoking remote method '[^']*': (?:Error: )?/, ""),
+    );
+  }
+}
+
 const bridge: KamapathyBridge = {
-  getState: () => ipcRenderer.invoke("kamapathy:state"),
-  dispatch: (action: BrowserAction) =>
-    ipcRenderer.invoke("kamapathy:dispatch", action),
+  getState: () => invoke("kamapathy:state"),
+  dispatch: (action: BrowserAction) => invoke("kamapathy:dispatch", action),
   subscribe(callback) {
     const listener = (_event: Electron.IpcRendererEvent, state: BrowserState) =>
       callback(state);
@@ -24,14 +36,13 @@ const bridge: KamapathyBridge = {
   },
   setContentBounds: (bounds: ContentBounds) =>
     ipcRenderer.send("kamapathy:bounds", bounds),
-  freeze: () => ipcRenderer.invoke("kamapathy:freeze"),
+  freeze: () => invoke("kamapathy:freeze"),
   hidePages: () => ipcRenderer.send("kamapathy:hide-pages"),
-  unfreeze: () => ipcRenderer.invoke("kamapathy:unfreeze"),
-  thumbnails: () => ipcRenderer.invoke("kamapathy:thumbnails"),
+  unfreeze: () => invoke("kamapathy:unfreeze"),
+  thumbnails: () => invoke("kamapathy:thumbnails"),
   windowControl: (action) => ipcRenderer.send("kamapathy:window", action),
-  importSources: () => ipcRenderer.invoke("kamapathy:import-sources"),
-  importBrowserData: (request) =>
-    ipcRenderer.invoke("kamapathy:import", request),
+  importSources: () => invoke("kamapathy:import-sources"),
+  importBrowserData: (request) => invoke("kamapathy:import", request),
 };
 
 contextBridge.exposeInMainWorld("kamapathy", bridge);
